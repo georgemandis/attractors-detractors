@@ -74,10 +74,12 @@ brutal resolutions.
 
 - Each pixel colored by ring position mapped around the hue wheel, so the
   chain is visible: every pixel chases the next hue over.
-- Dead pixels stay visible as gray squares at their death spot regardless
-  of the corpses toggle; the toggle only controls whether they block
-  movement. (With corpses off, the catcher briefly stands on the body,
-  then reveals the gray ghost when it moves away.)
+- Dead pixels stay visible at their death spot regardless of the corpses
+  toggle; the toggle only controls whether they block movement, and it
+  applies retroactively (toggling ON solidifies every existing body,
+  toggling OFF releases them all). Walkable bodies render as faint gray
+  ghosts; blocking corpses render solid gray. Because ghosts are walkable,
+  a pixel can die on top of an older body — blocking is tracked per cell.
 - Optional fading trails (toggle).
 - Optional thin lines from each chaser to its living prey (toggle).
 - Stats line: tick count, alive count, capture count.
