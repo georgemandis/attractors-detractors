@@ -28,7 +28,7 @@
 - Create: `index.html`
 
 **Interfaces:**
-- Produces: `settings` object (fields: `count, gridSize, speed, wrap, corpses, shuffled, aggressive, trails, chaseLines`), pixel array `px` of `{x, y, hue, alive}`, `occ` Map of `"x,y" → pixel index`, `corpseCells` Set of `"x,y"`, counters `tick, captures`, flags `settled, paused`, functions `key(x,y)`, `seedSim()`, `render()`, `aliveCount()`. Task 2 and 3 rely on all of these names exactly.
+- Produces: `settings` object (fields: `count, gridSize, speed, wrap, corpses, shuffled, aggressive, trails, chaseLines`), pixel array `px` of `{x, y, hue, alive}`, `occ` Map of `"x,y" → pixel index`, `corpseCells` Set of `"x,y"`, counters `tick, captures`, flags `settled, paused`, functions `cellKey(x,y)`, `seedSim()`, `render()`, `aliveCount()`. Task 2 and 3 rely on all of these names exactly.
 
 - [ ] **Step 1: Write `index.html` with layout, styles, settings, seeding, and static rendering**
 
@@ -120,7 +120,7 @@ let acc = 0;                  // ms accumulator for tick timing
 
 const statsEl = document.getElementById('stats');
 
-function key(x, y) { return x + ',' + y; }
+function cellKey(x, y) { return x + ',' + y; }
 
 function aliveCount() {
   let n = 0;
@@ -134,7 +134,7 @@ function seedSim() {
   tick = 0; captures = 0; settled = false; acc = 0;
   const cells = new Set();
   while (cells.size < N) {
-    cells.add(key(Math.floor(random(G)), Math.floor(random(G))));
+    cells.add(cellKey(Math.floor(random(G)), Math.floor(random(G))));
   }
   let i = 0;
   for (const k of cells) {
@@ -230,7 +230,7 @@ git commit -m "Scaffold sketch: layout, controls markup, seeding, static render"
 - Modify: `index.html` (the inline `<script>` only)
 
 **Interfaces:**
-- Consumes: `settings`, `px`, `occ`, `corpseCells`, `tick`, `captures`, `settled`, `paused`, `acc`, `key()`, `render()` from Task 1.
+- Consumes: `settings`, `px`, `occ`, `corpseCells`, `tick`, `captures`, `settled`, `paused`, `acc`, `cellKey()`, `render()` from Task 1.
 - Produces: `dist2(x1,y1,x2,y2)`, `stepPixel(i)`, `runTick()`, `isSettled()`, `OFFSETS`. A `draw()` that advances the sim on a time accumulator. Task 3 relies on `paused`, `runTick()`, and `settings` fields being live-readable.
 
 - [ ] **Step 1: Add the engine functions**
@@ -273,7 +273,7 @@ function stepPixel(i) {
     } else if (nx < 0 || ny < 0 || nx >= G || ny >= G) {
       continue;
     }
-    const k = key(nx, ny);
+    const k = cellKey(nx, ny);
     if (corpseCells.has(k)) continue;
     const isPreyCell = chasing && nx === prey.x && ny === prey.y;
     const occupant = occ.get(k);
@@ -296,16 +296,16 @@ function stepPixel(i) {
 
   if (chasing && m.x === prey.x && m.y === prey.y) {
     prey.alive = false;
-    occ.delete(key(prey.x, prey.y));
+    occ.delete(cellKey(prey.x, prey.y));
     captures++;
     if (settings.corpses) {
-      corpseCells.add(key(prey.x, prey.y));
+      corpseCells.add(cellKey(prey.x, prey.y));
       return; // corpse keeps the cell; catcher stays put
     }
   }
-  occ.delete(key(p.x, p.y));
+  occ.delete(cellKey(p.x, p.y));
   p.x = m.x; p.y = m.y;
-  occ.set(key(p.x, p.y), i);
+  occ.set(cellKey(p.x, p.y), i);
 }
 
 function isSettled() {
