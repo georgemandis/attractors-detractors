@@ -42,7 +42,7 @@
     <button id="btn-restart">restart</button>
     <button id="btn-clear">clear</button>
   </div>
-  <div id="hint">click any empty cell to add a pixel to the chain</div>
+  <div id="hint">click or drag on empty cells to add pixels to the chain — pause first to draw clean shapes</div>
   <fieldset>
     <legend>on restart</legend>
     <label>pixels <span class="val" id="val-count">100</span>
@@ -254,14 +254,34 @@ function addPixel(cx, cy) {
   settled = isSettled();
 }
 
-function mousePressed() {
-  if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
-  const G = settings.gridSize, cs = width / G;
-  const cx = Math.floor(mouseX / cs), cy = Math.floor(mouseY / cs);
+function tryAddCell(cx, cy) {
+  const G = settings.gridSize;
   if (cx < 0 || cy < 0 || cx >= G || cy >= G) return;
   const k = cellKey(cx, cy);
   if (occ.has(k) || corpseCells.has(k)) return; // ghosts are fine to build on
   addPixel(cx, cy);
+}
+
+function cellAt(mx, my) {
+  const cs = width / settings.gridSize;
+  return [Math.floor(mx / cs), Math.floor(my / cs)];
+}
+
+function mousePressed() {
+  if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
+  tryAddCell(...cellAt(mouseX, mouseY));
+}
+
+function mouseDragged() {
+  if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
+  // paint every cell the pointer crosses, interpolating between drag samples
+  // so fast strokes don't leave gaps
+  const [x1, y1] = cellAt(pmouseX, pmouseY);
+  const [x2, y2] = cellAt(mouseX, mouseY);
+  const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+  for (let s = 1; s <= steps; s++) {
+    tryAddCell(Math.round(x1 + ((x2 - x1) * s) / steps), Math.round(y1 + ((y2 - y1) * s) / steps));
+  }
 }
 
 function render() {

@@ -116,8 +116,12 @@ Changing pixel count or grid size takes effect on restart; the rest apply live.
 
 A *clear* button empties the grid. Clicking any empty cell (walkable ghost
 cells count as empty; blocking corpses and living pixels don't) adds a pixel
-there, at any time — into an empty grid or a running sim. New pixels chain
-in click order: each is chased by the previously added pixel and chases the
+there, at any time — into an empty grid or a running sim. Holding the button
+and dragging paints pixels continuously: every cell the pointer crosses is
+added, with interpolation between drag samples so fast strokes leave no gaps.
+(Drawing into a running sim is chaotic by design — each painted pixel appears
+adjacent to its hunter — so pause first to draw clean shapes.) New pixels
+chain in click order: each is chased by the previously added pixel and chases the
 sticky "chain head" (the first pixel), so the loop always closes. On a seeded
 run the head is pixel 0, so additions splice into the ring's seam. Added
 pixels draw a random temperament (governed live by the aggressive % slider)
