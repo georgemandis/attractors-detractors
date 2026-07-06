@@ -264,9 +264,50 @@ function draw() {
   render();
 }
 
+function bindRange(id, valId, onInput) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    val.textContent = el.value;
+    if (onInput) onInput(Number(el.value));
+  });
+}
+
+bindRange('in-count', 'val-count', null);            // applied on restart
+bindRange('in-grid', 'val-grid', null);              // applied on restart
+bindRange('in-speed', 'val-speed', v => { settings.speed = v; });
+
+function bindCheck(id, field) {
+  document.getElementById(id).addEventListener('input', e => {
+    settings[field] = e.target.checked;
+  });
+}
+
+bindCheck('in-wrap', 'wrap');
+bindCheck('in-corpses', 'corpses');
+bindCheck('in-shuffled', 'shuffled');
+bindCheck('in-trails', 'trails');
+bindCheck('in-lines', 'chaseLines');
+
+document.getElementById('in-strategy').addEventListener('input', e => {
+  settings.aggressive = e.target.value === 'aggressive';
+});
+
+const pauseBtn = document.getElementById('btn-pause');
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'resume' : 'pause';
+});
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  if (!paused) { paused = true; pauseBtn.textContent = 'resume'; }
+  if (!settled) runTick();
+});
+
 document.getElementById('btn-restart').addEventListener('click', () => {
   settings.count = Number(document.getElementById('in-count').value);
   settings.gridSize = Number(document.getElementById('in-grid').value);
+  if (paused) { paused = false; pauseBtn.textContent = 'pause'; }
   seedSim();
 });
 </script>
