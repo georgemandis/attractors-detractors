@@ -24,6 +24,7 @@
   }
   #panel button:hover { background: #26262f; }
   #stats { color: #8f8f9c; min-height: 1.5em; }
+  #hint { color: #5c5c68; font-size: 12px; }
   #stats .settled { color: #e6c96b; }
   fieldset { border: 1px solid #26262e; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
   legend { color: #8f8f9c; padding: 0 4px; }
@@ -39,7 +40,9 @@
     <button id="btn-pause">pause</button>
     <button id="btn-step">step</button>
     <button id="btn-restart">restart</button>
+    <button id="btn-clear">clear</button>
   </div>
+  <div id="hint">click any empty cell to add a pixel to the chain</div>
   <fieldset>
     <legend>on restart</legend>
     <label>pixels <span class="val" id="val-count">100</span>
@@ -81,6 +84,7 @@ let corpseCells = new Set();  // "x,y"
 let tick = 0, captures = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
+let chainHead = null;         // whom the next click-added pixel will chase
 
 const statsEl = document.getElementById('stats');
 
@@ -212,7 +216,52 @@ function seedSim() {
     occ.set(k, i);
     i++;
   }
+  chainHead = N > 0 ? 0 : null;
   background(11, 11, 14);
+}
+
+function clearSim() {
+  px = []; occ = new Map(); corpseCells = new Set();
+  tick = 0; captures = 0; settled = true; acc = 0; chainHead = null;
+  background(11, 11, 14);
+}
+
+// Splice pixel i into the chain in click order: it is chased by the current
+// tail (the head's hunter) and chases the head, so the loop always closes
+// back through the first pixel.
+function spliceIn(i) {
+  if (chainHead === null || !px[chainHead] || !px[chainHead].alive) {
+    chainHead = px.findIndex((q, j) => j !== i && q.alive);
+    if (chainHead === -1) { chainHead = i; return; } // first pixel: self-linked, inert
+  }
+  const head = px[chainHead];
+  let tail = head.hunter;
+  if (tail === chainHead || !px[tail].alive) tail = chainHead; // head is alone
+  px[tail].prey = i;
+  px[i].hunter = tail;
+  px[i].prey = chainHead;
+  head.hunter = i;
+}
+
+function addPixel(cx, cy) {
+  const i = px.length;
+  px.push({
+    x: cx, y: cy, hue: (i * 137.508) % 360, alive: true, temper: random(1),
+    prey: i, hunter: i,
+  });
+  occ.set(cellKey(cx, cy), i);
+  spliceIn(i);
+  settled = isSettled();
+}
+
+function mousePressed() {
+  if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
+  const G = settings.gridSize, cs = width / G;
+  const cx = Math.floor(mouseX / cs), cy = Math.floor(mouseY / cs);
+  if (cx < 0 || cy < 0 || cx >= G || cy >= G) return;
+  const k = cellKey(cx, cy);
+  if (occ.has(k) || corpseCells.has(k)) return; // ghosts are fine to build on
+  addPixel(cx, cy);
 }
 
 function render() {
@@ -251,7 +300,7 @@ function render() {
   }
   colorMode(RGB, 255, 255, 255, 255);
   statsEl.innerHTML = 'tick ' + tick + ' · alive ' + aliveCount() + ' · captures ' + captures
-    + (settled ? ' · <span class="settled">settled</span>' : '');
+    + (settled && aliveCount() > 0 ? ' · <span class="settled">settled</span>' : '');
 }
 
 function setup() {
@@ -326,6 +375,11 @@ document.getElementById('btn-restart').addEventListener('click', () => {
   settings.gridSize = Number(document.getElementById('in-grid').value);
   if (paused) { paused = false; pauseBtn.textContent = 'pause'; }
   seedSim();
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  settings.gridSize = Number(document.getElementById('in-grid').value);
+  clearSim();
 });
 </script>
 </body>

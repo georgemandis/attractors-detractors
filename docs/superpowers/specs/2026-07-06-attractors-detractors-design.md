@@ -112,6 +112,18 @@ brutal resolutions.
 
 Changing pixel count or grid size takes effect on restart; the rest apply live.
 
+## Click to add / clear
+
+A *clear* button empties the grid. Clicking any empty cell (walkable ghost
+cells count as empty; blocking corpses and living pixels don't) adds a pixel
+there, at any time — into an empty grid or a running sim. New pixels chain
+in click order: each is chased by the previously added pixel and chases the
+sticky "chain head" (the first pixel), so the loop always closes. On a seeded
+run the head is pixel 0, so additions splice into the ring's seam. Added
+pixels draw a random temperament (governed live by the aggressive % slider)
+and get golden-angle-spaced hues. Adding a chase pair to a settled or empty
+grid resumes ticking automatically.
+
 ## Testing / verification
 
 Art sketch — verification is visual and behavioral, in the browser:
