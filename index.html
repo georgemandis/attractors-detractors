@@ -94,6 +94,101 @@ function aliveCount() {
   return n;
 }
 
+const OFFSETS = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1,  0], [0,  0], [1,  0],
+  [-1,  1], [0,  1], [1,  1],
+];
+
+function dist2(x1, y1, x2, y2) {
+  const G = settings.gridSize;
+  let dx = Math.abs(x1 - x2), dy = Math.abs(y1 - y2);
+  if (settings.wrap) {
+    dx = Math.min(dx, G - dx);
+    dy = Math.min(dy, G - dy);
+  }
+  return dx * dx + dy * dy;
+}
+
+function stepPixel(i) {
+  const p = px[i];
+  const N = px.length;
+  const preyIdx = (i + 1) % N, hunterIdx = (i - 1 + N) % N;
+  const prey = px[preyIdx], hunter = px[hunterIdx];
+  const chasing = N > 1 && prey.alive;
+  const fleeing = N > 1 && hunter.alive;
+  if (!chasing && !fleeing) return;
+
+  const G = settings.gridSize;
+  let best = [], bestA = Infinity, bestB = Infinity;
+  for (const [ox, oy] of OFFSETS) {
+    let nx = p.x + ox, ny = p.y + oy;
+    if (settings.wrap) {
+      nx = (nx + G) % G;
+      ny = (ny + G) % G;
+    } else if (nx < 0 || ny < 0 || nx >= G || ny >= G) {
+      continue;
+    }
+    const k = cellKey(nx, ny);
+    if (corpseCells.has(k)) continue;
+    const isPreyCell = chasing && nx === prey.x && ny === prey.y;
+    const occupant = occ.get(k);
+    if (occupant !== undefined && occupant !== i && !isPreyCell) continue;
+
+    // Inactive criteria contribute a constant 0, which never affects ordering.
+    const dPrey = chasing ? dist2(nx, ny, prey.x, prey.y) : 0;
+    const dHunt = fleeing ? -dist2(nx, ny, hunter.x, hunter.y) : 0; // negated: farther is better
+    const a = settings.aggressive ? dPrey : dHunt;
+    const b = settings.aggressive ? dHunt : dPrey;
+    if (a < bestA || (a === bestA && b < bestB)) {
+      best = [{ x: nx, y: ny }]; bestA = a; bestB = b;
+    } else if (a === bestA && b === bestB) {
+      best.push({ x: nx, y: ny });
+    }
+  }
+  if (best.length === 0) return;
+  const m = best[Math.floor(random(best.length))];
+  if (m.x === p.x && m.y === p.y) return;
+
+  if (chasing && m.x === prey.x && m.y === prey.y) {
+    prey.alive = false;
+    occ.delete(cellKey(prey.x, prey.y));
+    captures++;
+    if (settings.corpses) {
+      corpseCells.add(cellKey(prey.x, prey.y));
+      return; // corpse keeps the cell; catcher stays put
+    }
+  }
+  occ.delete(cellKey(p.x, p.y));
+  p.x = m.x; p.y = m.y;
+  occ.set(cellKey(p.x, p.y), i);
+}
+
+function isSettled() {
+  const N = px.length;
+  if (N < 2) return true;
+  for (let i = 0; i < N; i++) {
+    if (px[i].alive && px[(i + 1) % N].alive) return false;
+  }
+  return true;
+}
+
+function runTick() {
+  const order = [];
+  for (let i = 0; i < px.length; i++) if (px[i].alive) order.push(i);
+  if (settings.shuffled) {
+    for (let j = order.length - 1; j > 0; j--) {
+      const r = Math.floor(random(j + 1));
+      [order[j], order[r]] = [order[r], order[j]];
+    }
+  }
+  for (const i of order) {
+    if (px[i].alive) stepPixel(i); // may have been caught earlier this tick
+  }
+  tick++;
+  settled = isSettled();
+}
+
 function seedSim() {
   const N = settings.count, G = settings.gridSize;
   px = []; occ = new Map(); corpseCells = new Set();
@@ -157,6 +252,15 @@ function setup() {
 }
 
 function draw() {
+  if (!paused && !settled) {
+    acc += deltaTime;
+    const interval = 1000 / settings.speed;
+    while (acc >= interval) {
+      acc -= interval;
+      runTick();
+      if (settled) break;
+    }
+  }
   render();
 }
 
