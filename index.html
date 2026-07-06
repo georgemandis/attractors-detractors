@@ -54,6 +54,7 @@
     <label>wrap edges <input id="in-wrap" type="checkbox" checked></label>
     <label>corpses block <input id="in-corpses" type="checkbox"></label>
     <label>shuffled order <input id="in-shuffled" type="checkbox" checked></label>
+    <label>inherit prey <input id="in-inherit" type="checkbox" checked></label>
     <label>aggressive % <span class="val" id="val-strategy">50</span>
       <input id="in-strategy" type="range" min="0" max="100" step="5" value="50"></label>
     <label>trails <input id="in-trails" type="checkbox" checked></label>
@@ -69,6 +70,7 @@ const settings = {
   corpses: false,     // corpses block movement
   shuffled: true,     // shuffled turn order vs fixed ring order
   aggressivePct: 50,  // % of pixels playing the aggressive strategy
+  inherit: true,      // catcher inherits its victim's prey (ring never breaks)
   trails: true,
   chaseLines: false,
 };
@@ -109,11 +111,9 @@ function dist2(x1, y1, x2, y2) {
 
 function stepPixel(i) {
   const p = px[i];
-  const N = px.length;
-  const preyIdx = (i + 1) % N, hunterIdx = (i - 1 + N) % N;
-  const prey = px[preyIdx], hunter = px[hunterIdx];
-  const chasing = N > 1 && prey.alive;
-  const fleeing = N > 1 && hunter.alive;
+  const prey = px[p.prey], hunter = px[p.hunter];
+  const chasing = p.prey !== i && prey.alive;
+  const fleeing = p.hunter !== i && hunter.alive;
   if (!chasing && !fleeing) return;
 
   const G = settings.gridSize;
@@ -152,6 +152,12 @@ function stepPixel(i) {
     prey.alive = false;
     occ.delete(cellKey(prey.x, prey.y));
     captures++;
+    if (settings.inherit) {
+      // catcher inherits the victim's prey; that prey now fears the catcher.
+      // With two left this self-links the survivor, which reads as "no prey".
+      p.prey = prey.prey;
+      px[p.prey].hunter = i;
+    }
     if (settings.corpses) {
       corpseCells.add(cellKey(prey.x, prey.y));
       return; // corpse keeps the cell; catcher stays put
@@ -163,10 +169,9 @@ function stepPixel(i) {
 }
 
 function isSettled() {
-  const N = px.length;
-  if (N < 2) return true;
-  for (let i = 0; i < N; i++) {
-    if (px[i].alive && px[(i + 1) % N].alive) return false;
+  for (let i = 0; i < px.length; i++) {
+    const p = px[i];
+    if (p.alive && p.prey !== i && px[p.prey].alive) return false;
   }
   return true;
 }
@@ -200,7 +205,10 @@ function seedSim() {
     const [x, y] = k.split(',').map(Number);
     // temper is a fixed draw in [0,1): the pixel plays aggressive while
     // temper*100 < aggressivePct, so the slider converts pixels smoothly
-    px.push({ x, y, hue: (i / N) * 360, alive: true, temper: random(1) });
+    px.push({
+      x, y, hue: (i / N) * 360, alive: true, temper: random(1),
+      prey: (i + 1) % N, hunter: (i - 1 + N) % N,
+    });
     occ.set(k, i);
     i++;
   }
@@ -232,10 +240,9 @@ function render() {
   }
   if (settings.chaseLines) {
     strokeWeight(1);
-    const N = px.length;
-    for (let i = 0; i < N; i++) {
-      const p = px[i], q = px[(i + 1) % N];
-      if (N > 1 && p.alive && q.alive) {
+    for (let i = 0; i < px.length; i++) {
+      const p = px[i], q = px[p.prey];
+      if (p.alive && p.prey !== i && q.alive) {
         stroke(p.hue, 60, 100, 0.35);
         line(p.x * cs + cs / 2, p.y * cs + cs / 2, q.x * cs + cs / 2, q.y * cs + cs / 2);
       }
@@ -287,6 +294,7 @@ function bindCheck(id, field) {
 
 bindCheck('in-wrap', 'wrap');
 bindCheck('in-shuffled', 'shuffled');
+bindCheck('in-inherit', 'inherit');
 
 // corpses toggle applies retroactively: ON solidifies every existing body,
 // OFF releases them all back to walkable ghosts

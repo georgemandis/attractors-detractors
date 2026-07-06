@@ -58,7 +58,16 @@ occupancy rule.
 - Corpses ON: the prey's cell becomes a permanent obstacle (corpse) and the
   catcher stays where it was.
 
-No retargeting in v1: a successful catcher never chases again.
+Prey/hunter relations are explicit per-pixel links (seeded as the ring
+`i → i+1 mod N`), and the *inherit prey* toggle picks what a capture does
+to them:
+
+- Inherit ON (default): the catcher inherits its victim's prey, and that
+  prey now fears the catcher — the ring shrinks but never breaks, so every
+  living pixel always has someone to chase and someone to fear, down to a
+  final mutual pursuit.
+- Inherit OFF: retire-on-catch — the catcher never chases again and its
+  victim's prey loses its hunter, so captures fragment the ring.
 
 **End state.** When no living pixel has a living prey, nothing can change;
 the sim shows a "settled" banner and stops advancing captures (pixels may
@@ -95,6 +104,7 @@ brutal resolutions.
 | Topology | toggle wrap/walls | wrap |
 | Corpses as obstacles | toggle | off |
 | Turn order | toggle shuffled/fixed | shuffled |
+| Inherit prey | toggle | on |
 | Aggressive % | slider 0–100 | 50 |
 | Trails | toggle | on |
 | Chase lines | toggle | off |
@@ -111,6 +121,4 @@ settled state is detected.
 
 ## v2 ideas (out of scope)
 
-- Retargeting variant: catcher inherits its victim's prey, so the ring
-  shrinks but never breaks — runs down to two survivors in mutual pursuit.
 - Adjacency-based or wear-down capture rules.
