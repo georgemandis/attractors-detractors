@@ -36,8 +36,8 @@ offsets on each axis).
 
 **Move scoring — lexicographic.**
 
-- *Aggressive* (default): sort candidates by (1) smaller distance to prey,
-  then (2) larger distance to hunter. So "closer to prey, same distance to
+- *Aggressive*: sort candidates by (1) smaller distance to prey, then
+  (2) larger distance to hunter. So "closer to prey, same distance to
   hunter" beats "same distance to prey, farther from hunter."
 - *Cautious*: same, with the two priorities swapped.
 - Ties after both criteria are broken uniformly at random.
@@ -45,7 +45,10 @@ offsets on each axis).
 - A pixel whose hunter is dead scores only on chasing its prey.
 - A pixel with neither stands still.
 
-Strategy is a global setting in v1 (all-aggressive or all-cautious).
+Strategy is per-pixel: each pixel draws a fixed random temperament in [0,1)
+at seed time and plays aggressive while `temperament × 100 <` the
+*aggressive %* slider (0 = all cautious, 100 = all aggressive, default 50).
+The slider applies live and converts pixels monotonically as it moves.
 
 **Capture.** If a pixel's chosen move is its prey's cell, that is a catch and
 the prey dies. Moving onto the prey's cell is the single exception to the
@@ -71,7 +74,10 @@ brutal resolutions.
 
 - Each pixel colored by ring position mapped around the hue wheel, so the
   chain is visible: every pixel chases the next hue over.
-- Corpses render dark gray.
+- Dead pixels stay visible as gray squares at their death spot regardless
+  of the corpses toggle; the toggle only controls whether they block
+  movement. (With corpses off, the catcher briefly stands on the body,
+  then reveals the gray ghost when it moves away.)
 - Optional fading trails (toggle).
 - Optional thin lines from each chaser to its living prey (toggle).
 - Stats line: tick count, alive count, capture count.
@@ -87,7 +93,7 @@ brutal resolutions.
 | Topology | toggle wrap/walls | wrap |
 | Corpses as obstacles | toggle | off |
 | Turn order | toggle shuffled/fixed | shuffled |
-| Strategy | select aggressive/cautious | aggressive |
+| Aggressive % | slider 0–100 | 50 |
 | Trails | toggle | on |
 | Chase lines | toggle | off |
 | Restart | button (reseeds) | — |
@@ -103,7 +109,6 @@ settled state is detected.
 
 ## v2 ideas (out of scope)
 
-- Per-pixel strategy mix (aggressive and cautious pixels coexisting).
 - Retargeting variant: catcher inherits its victim's prey, so the ring
   shrinks but never breaks — runs down to two survivors in mutual pursuit.
 - Adjacency-based or wear-down capture rules.

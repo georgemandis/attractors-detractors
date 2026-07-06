@@ -13,9 +13,9 @@
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   #sketch canvas { display: block; border: 1px solid #26262e; }
-  #panel { width: 230px; display: flex; flex-direction: column; gap: 10px; }
+  #panel { width: 250px; display: flex; flex-direction: column; gap: 10px; }
   #panel h1 { font-size: 14px; margin: 0 0 4px; color: #ececf2; font-weight: 600; }
-  #panel label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #panel label { display: flex; justify-content: space-between; align-items: center; gap: 8px; white-space: nowrap; }
   #panel label span.val { color: #8f8f9c; }
   #panel input[type=range] { width: 110px; }
   #panel button {
@@ -54,11 +54,8 @@
     <label>wrap edges <input id="in-wrap" type="checkbox" checked></label>
     <label>corpses block <input id="in-corpses" type="checkbox"></label>
     <label>shuffled order <input id="in-shuffled" type="checkbox" checked></label>
-    <label>strategy
-      <select id="in-strategy">
-        <option value="aggressive" selected>aggressive</option>
-        <option value="cautious">cautious</option>
-      </select></label>
+    <label>aggressive % <span class="val" id="val-strategy">50</span>
+      <input id="in-strategy" type="range" min="0" max="100" step="5" value="50"></label>
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
   </fieldset>
@@ -71,7 +68,7 @@ const settings = {
   wrap: true,
   corpses: false,     // corpses block movement
   shuffled: true,     // shuffled turn order vs fixed ring order
-  aggressive: true,   // vs cautious
+  aggressivePct: 50,  // % of pixels playing the aggressive strategy
   trails: true,
   chaseLines: false,
 };
@@ -138,8 +135,9 @@ function stepPixel(i) {
     // Inactive criteria contribute a constant 0, which never affects ordering.
     const dPrey = chasing ? dist2(nx, ny, prey.x, prey.y) : 0;
     const dHunt = fleeing ? -dist2(nx, ny, hunter.x, hunter.y) : 0; // negated: farther is better
-    const a = settings.aggressive ? dPrey : dHunt;
-    const b = settings.aggressive ? dHunt : dPrey;
+    const aggressive = p.temper * 100 < settings.aggressivePct;
+    const a = aggressive ? dPrey : dHunt;
+    const b = aggressive ? dHunt : dPrey;
     if (a < bestA || (a === bestA && b < bestB)) {
       best = [{ x: nx, y: ny }]; bestA = a; bestB = b;
     } else if (a === bestA && b === bestB) {
@@ -200,7 +198,9 @@ function seedSim() {
   let i = 0;
   for (const k of cells) {
     const [x, y] = k.split(',').map(Number);
-    px.push({ x, y, hue: (i / N) * 360, alive: true });
+    // temper is a fixed draw in [0,1): the pixel plays aggressive while
+    // temper*100 < aggressivePct, so the slider converts pixels smoothly
+    px.push({ x, y, hue: (i / N) * 360, alive: true, temper: random(1) });
     occ.set(k, i);
     i++;
   }
@@ -217,12 +217,14 @@ function render() {
   }
   const cs = width / settings.gridSize;
   noStroke();
-  fill(70);
-  for (const k of corpseCells) {
-    const [x, y] = k.split(',').map(Number);
-    rect(x * cs, y * cs, cs, cs);
-  }
   colorMode(HSB, 360, 100, 100, 1);
+  // dead pixels stay visible as gray bodies at their death spot;
+  // the corpses toggle only controls whether they block movement
+  fill(0, 0, 28);
+  for (const p of px) {
+    if (p.alive) continue;
+    rect(p.x * cs, p.y * cs, cs, cs);
+  }
   for (const p of px) {
     if (!p.alive) continue;
     fill(p.hue, 80, 100);
@@ -289,9 +291,7 @@ bindCheck('in-shuffled', 'shuffled');
 bindCheck('in-trails', 'trails');
 bindCheck('in-lines', 'chaseLines');
 
-document.getElementById('in-strategy').addEventListener('input', e => {
-  settings.aggressive = e.target.value === 'aggressive';
-});
+bindRange('in-strategy', 'val-strategy', v => { settings.aggressivePct = v; });
 
 const pauseBtn = document.getElementById('btn-pause');
 pauseBtn.addEventListener('click', () => {
