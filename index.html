@@ -68,6 +68,8 @@
       <input id="in-strategy" type="range" min="0" max="100" step="5" value="50"></label>
     <label>jitter % <span class="val" id="val-jitter">0</span>
       <input id="in-jitter" type="range" min="0" max="100" step="5" value="0"></label>
+    <label>vision <span class="val" id="val-vision">∞</span>
+      <input id="in-vision" type="range" min="2" max="42" step="1" value="42"></label>
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
   </fieldset>
@@ -84,6 +86,7 @@ const settings = {
   inherit: true,      // catcher inherits its victim's prey (ring never breaks)
   jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
   moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
+  vision: 42,         // sight radius in cells; 42 means unlimited
   trails: true,
   chaseLines: false,
 };
@@ -132,9 +135,14 @@ function dist2(x1, y1, x2, y2) {
 function stepPixel(i) {
   const p = px[i];
   const prey = px[p.prey], hunter = px[p.hunter];
-  const chasing = p.prey !== i && prey.alive;
-  const fleeing = p.hunter !== i && hunter.alive;
-  if (!chasing && !fleeing) return;
+  const vr = settings.vision >= 42 ? Infinity : settings.vision * settings.vision;
+  const preyAlive = p.prey !== i && prey.alive;
+  const huntAlive = p.hunter !== i && hunter.alive;
+  const chasing = preyAlive && dist2(p.x, p.y, prey.x, prey.y) <= vr;
+  const fleeing = huntAlive && dist2(p.x, p.y, hunter.x, hunter.y) <= vr;
+  // a pixel whose living targets are all out of sight wanders in search of them
+  const wandering = !chasing && !fleeing && (preyAlive || huntAlive);
+  if (!chasing && !fleeing && !wandering) return;
 
   const G = settings.gridSize;
   const cands = [];
@@ -167,9 +175,9 @@ function stepPixel(i) {
     }
   }
   if (cands.length === 0) return;
-  // a jittering pixel ignores strategy for this tick and moves at random —
-  // random blunders onto the prey's cell still capture
-  const m = (random(1) * 100 < settings.jitter)
+  // wanderers and jittering pixels ignore strategy for this tick and move at
+  // random — random blunders onto the prey's cell still capture
+  const m = (wandering || random(1) * 100 < settings.jitter)
     ? cands[Math.floor(random(cands.length))]
     : best[Math.floor(random(best.length))];
   if (m.x === p.x && m.y === p.y) return;
@@ -407,6 +415,13 @@ bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; });
 
 document.getElementById('in-moves').addEventListener('input', e => {
   settings.moves = e.target.value;
+});
+
+const visionEl = document.getElementById('in-vision');
+visionEl.addEventListener('input', () => {
+  const v = Number(visionEl.value);
+  settings.vision = v;
+  document.getElementById('val-vision').textContent = v >= 42 ? '∞' : v;
 });
 
 const pauseBtn = document.getElementById('btn-pause');

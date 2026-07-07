@@ -28,8 +28,23 @@ turn-order setting:
 - *Fixed ring order*: always pixel 0 first. Deliberately biased — an
   observable experiment in first-mover advantage.
 
-**Candidate moves.** The 8 Moore neighbors plus staying put, minus cells that
-are occupied by living pixels, corpses, or off-grid (walls mode).
+**Candidate moves.** The selected neighborhood plus staying put, minus cells
+that are occupied by living pixels, corpses, or off-grid (walls mode). The
+*moves* setting picks the neighborhood: all 8 (default), orthogonal only, or
+diagonal only. Diagonal movers can never change checkerboard parity, so in
+diagonal mode landing orthogonally adjacent to the prey also counts as a
+capture (the body stays at the prey's cell; the catcher completes its move).
+
+**Jitter.** Each pixel has a per-tick chance (the *jitter %* slider) of
+ignoring strategy and taking a uniformly random legal move. Random blunders
+onto the prey's cell still capture. 0 is fully deterministic strategy;
+100 is a random walk.
+
+**Vision.** Pixels only react to prey/hunters within the *vision* radius
+(Euclidean, torus-aware; ∞ by default). A pixel whose living targets are all
+out of sight wanders randomly in search of them; chases ignite on encounter.
+Capture requires an in-sight chase — a wanderer cannot blunder onto unseen
+prey.
 
 **Distance.** Euclidean. In wrap mode, torus-aware (minimum over wrapped
 offsets on each axis).
@@ -106,6 +121,9 @@ brutal resolutions.
 | Turn order | toggle shuffled/fixed | shuffled |
 | Inherit prey | toggle | on |
 | Aggressive % | slider 0–100 | 50 |
+| Jitter % | slider 0–100 | 0 |
+| Moves | select all 8 / orthogonal / diagonal | all 8 |
+| Vision | slider 2–41 cells, or ∞ | ∞ |
 | Trails | toggle | on |
 | Chase lines | toggle | off |
 | Restart | button (reseeds) | — |
