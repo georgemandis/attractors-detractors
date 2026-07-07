@@ -44,6 +44,13 @@ onto the prey's cell still capture. 0 is fully deterministic strategy;
 temperament class moves only on even ticks — half speed. Class membership
 follows the live aggressive % slider.
 
+**Hunger.** With *starve after* set, any pixel with a living prey runs a
+starvation clock; a kill resets it, and exceeding the limit kills the hunter
+(body follows the usual ghost/corpse rules; with inherit on, the ring closes
+around the starved pixel). Good evasion becomes a weapon. The stats line
+shows a starved count. With inherit + hunger on, runs collapse to a single
+survivor.
+
 **Vision.** Pixels only react to prey/hunters within the *vision* radius
 (Euclidean, torus-aware; ∞ by default). A pixel whose living targets are all
 out of sight wanders randomly in search of them; chases ignite on encounter.
@@ -129,6 +136,7 @@ brutal resolutions.
 | Moves | select all 8 / orthogonal / diagonal | all 8 |
 | Vision | slider 2–41 cells, or ∞ | ∞ |
 | Speed classes | select uniform / fast hunters / fast cowards | uniform |
+| Starve after | slider 20–400 ticks, or off | off |
 | Trails | toggle | on |
 | Chase lines | toggle | off |
 | Restart | button (reseeds) | — |

@@ -76,6 +76,8 @@
       <input id="in-jitter" type="range" min="0" max="100" step="5" value="0"></label>
     <label>vision <span class="val" id="val-vision">∞</span>
       <input id="in-vision" type="range" min="2" max="42" step="1" value="42"></label>
+    <label>starve after <span class="val" id="val-starve">off</span>
+      <input id="in-starve" type="range" min="0" max="400" step="20" value="0"></label>
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
   </fieldset>
@@ -94,6 +96,7 @@ const settings = {
   moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
   vision: 42,         // sight radius in cells; 42 means unlimited
   speedMode: 'uniform', // uniform | fast-aggressive | fast-cautious (slow class skips odd ticks)
+  starve: 0,          // ticks a chaser may go without a kill before dying; 0 = off
   trails: true,
   chaseLines: false,
 };
@@ -101,7 +104,7 @@ const settings = {
 let px = [];                  // {x, y, hue, alive}
 let occ = new Map();          // "x,y" -> index of living pixel
 let corpseCells = new Set();  // "x,y"
-let tick = 0, captures = 0;
+let tick = 0, captures = 0, starved = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
 let chainHead = null;         // whom the next click-added pixel will chase
@@ -196,6 +199,7 @@ function stepPixel(i) {
     prey.alive = false;
     occ.delete(cellKey(prey.x, prey.y));
     captures++;
+    p.hunger = 0; // a kill resets the starvation clock
     if (settings.inherit) {
       // catcher inherits the victim's prey; that prey now fears the catcher.
       // With two left this self-links the survivor, which reads as "no prey".
@@ -240,14 +244,35 @@ function runTick() {
   for (const i of order) {
     if (px[i].alive) stepPixel(i); // may have been caught earlier this tick
   }
+  if (settings.starve > 0) {
+    for (let i = 0; i < px.length; i++) {
+      const p = px[i];
+      if (!p.alive || p.prey === i || !px[p.prey].alive) continue; // clock only runs while hunting
+      p.hunger++;
+      if (p.hunger > settings.starve) starveOut(i);
+    }
+  }
   tick++;
   settled = isSettled();
+}
+
+function starveOut(i) {
+  const p = px[i];
+  p.alive = false;
+  occ.delete(cellKey(p.x, p.y));
+  starved++;
+  if (settings.inherit && px[p.hunter].alive) {
+    // close the ring around the starved pixel
+    px[p.hunter].prey = p.prey;
+    px[p.prey].hunter = p.hunter;
+  }
+  if (settings.corpses) corpseCells.add(cellKey(p.x, p.y));
 }
 
 function seedSim() {
   const N = settings.count, G = settings.gridSize;
   px = []; occ = new Map(); corpseCells = new Set();
-  tick = 0; captures = 0; settled = false; acc = 0;
+  tick = 0; captures = 0; starved = 0; settled = false; acc = 0;
   const cells = new Set();
   while (cells.size < N) {
     cells.add(cellKey(Math.floor(random(G)), Math.floor(random(G))));
@@ -259,7 +284,7 @@ function seedSim() {
     // temper*100 < aggressivePct, so the slider converts pixels smoothly
     px.push({
       x, y, hue: (i / N) * 360, alive: true, temper: random(1),
-      prey: (i + 1) % N, hunter: (i - 1 + N) % N,
+      prey: (i + 1) % N, hunter: (i - 1 + N) % N, hunger: 0,
     });
     occ.set(k, i);
     i++;
@@ -270,7 +295,7 @@ function seedSim() {
 
 function clearSim() {
   px = []; occ = new Map(); corpseCells = new Set();
-  tick = 0; captures = 0; settled = true; acc = 0; chainHead = null;
+  tick = 0; captures = 0; starved = 0; settled = true; acc = 0; chainHead = null;
   background(11, 11, 14);
 }
 
@@ -295,7 +320,7 @@ function addPixel(cx, cy) {
   const i = px.length;
   px.push({
     x: cx, y: cy, hue: (i * 137.508) % 360, alive: true, temper: random(1),
-    prey: i, hunter: i,
+    prey: i, hunter: i, hunger: 0,
   });
   occ.set(cellKey(cx, cy), i);
   spliceIn(i);
@@ -368,6 +393,7 @@ function render() {
   }
   colorMode(RGB, 255, 255, 255, 255);
   statsEl.innerHTML = 'tick ' + tick + ' · alive ' + aliveCount() + ' · captures ' + captures
+    + (starved > 0 ? ' · starved ' + starved : '')
     + (settled && aliveCount() > 0 ? ' · <span class="settled">settled</span>' : '');
 }
 
@@ -434,6 +460,13 @@ document.getElementById('in-moves').addEventListener('input', e => {
 
 document.getElementById('in-speedmode').addEventListener('input', e => {
   settings.speedMode = e.target.value;
+});
+
+const starveEl = document.getElementById('in-starve');
+starveEl.addEventListener('input', () => {
+  const v = Number(starveEl.value);
+  settings.starve = v;
+  document.getElementById('val-starve').textContent = v === 0 ? 'off' : v;
 });
 
 const visionEl = document.getElementById('in-vision');
