@@ -150,6 +150,20 @@ brutal resolutions.
 
 Changing pixel count or grid size takes effect on restart; the rest apply live.
 
+## Presets
+
+Two selects compose like the manual workflow (recipe first, then shape):
+
+- *Recipe* applies a complete named parameter set (battle royale, ecosystem
+  panic, cautious standoff, graveyard maze, drunken brawl, tortoise hunt),
+  syncs the UI, and reseeds. Every recipe spells out all sim parameters so
+  leftovers from play never leak in; count/grid/speed/trails/lines stay
+  user-controlled.
+- *Shape* clears the grid, pauses, and draws a preset shape (circle, square,
+  spiral, line, lattice) as one chain in path order with a smooth rainbow
+  along the path. Tweak parameters, then resume. The select snaps back to
+  "—" after drawing so the same shape can be re-picked.
+
 ## Click to add / clear
 
 A *clear* button empties the grid. Clicking any empty cell (walkable ghost

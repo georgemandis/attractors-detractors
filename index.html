@@ -44,6 +44,28 @@
   </div>
   <div id="hint">click or drag on empty cells to add pixels to the chain — pause first to draw clean shapes</div>
   <fieldset>
+    <legend>presets</legend>
+    <label>recipe
+      <select id="in-recipe">
+        <option value="" selected>—</option>
+        <option value="battle royale">battle royale</option>
+        <option value="ecosystem panic">ecosystem panic</option>
+        <option value="cautious standoff">cautious standoff</option>
+        <option value="graveyard maze">graveyard maze</option>
+        <option value="drunken brawl">drunken brawl</option>
+        <option value="tortoise hunt">tortoise hunt</option>
+      </select></label>
+    <label>shape
+      <select id="in-shape">
+        <option value="" selected>—</option>
+        <option value="circle">circle</option>
+        <option value="square">square</option>
+        <option value="spiral">spiral</option>
+        <option value="line">line</option>
+        <option value="lattice">lattice</option>
+      </select></label>
+  </fieldset>
+  <fieldset>
     <legend>on restart</legend>
     <label>pixels <span class="val" id="val-count">100</span>
       <input id="in-count" type="range" min="10" max="500" step="10" value="100"></label>
@@ -363,6 +385,63 @@ function mousePressed() {
   tryAddCell(...cellAt(mouseX, mouseY));
 }
 
+// Every recipe spells out the full parameter set so leftovers from play
+// never leak in. count/grid/speed/trails/lines stay user-controlled.
+const RECIPES = {
+  'battle royale':    { wrap: false, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
+                        aggressivePct: 70, jitter: 0, vision: 42, starve: 100, rings: 1 },
+  'ecosystem panic':  { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
+                        aggressivePct: 60, jitter: 10, vision: 10, starve: 0, rings: 4 },
+  'cautious standoff':{ wrap: false, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
+                        aggressivePct: 0, jitter: 0, vision: 42, starve: 0, rings: 1 },
+  'graveyard maze':   { wrap: true, corpses: true, inherit: true, moves: 'all', speedMode: 'uniform',
+                        aggressivePct: 100, jitter: 5, vision: 42, starve: 0, rings: 1 },
+  'drunken brawl':    { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
+                        aggressivePct: 100, jitter: 45, vision: 42, starve: 0, rings: 1 },
+  'tortoise hunt':    { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'fast-cautious',
+                        aggressivePct: 50, jitter: 0, vision: 42, starve: 150, rings: 1 },
+};
+
+// Shapes are placed as one chain in path order, onto a cleared, paused grid —
+// tweak parameters, then resume to set it loose.
+function drawShape(name) {
+  if (!paused) { paused = true; pauseBtn.textContent = 'resume'; }
+  clearSim();
+  const G = settings.gridSize, c = (G - 1) / 2;
+  const pts = [];
+  if (name === 'circle') {
+    const R = G * 0.35;
+    for (let a = 0; a < Math.PI * 2; a += 1 / R) pts.push([c + R * Math.cos(a), c + R * Math.sin(a)]);
+  } else if (name === 'square') {
+    const h = Math.floor(G * 0.35);
+    for (let x = -h; x < h; x++) pts.push([c + x, c - h]);
+    for (let y = -h; y < h; y++) pts.push([c + h, c + y]);
+    for (let x = h; x > -h; x--) pts.push([c + x, c + h]);
+    for (let y = h; y > -h; y--) pts.push([c - h, c + y]);
+  } else if (name === 'spiral') {
+    const turns = 4;
+    for (let a = 0; a < Math.PI * 2 * turns; a += 0.05) {
+      const r = (a / (Math.PI * 2 * turns)) * G * 0.45;
+      pts.push([c + r * Math.cos(a), c + r * Math.sin(a)]);
+    }
+  } else if (name === 'line') {
+    for (let t = 2; t < G - 2; t++) pts.push([t, t]);
+  } else if (name === 'lattice') {
+    const step = 5;
+    let flip = false;
+    for (let y = 4; y < G - 4; y += step) {
+      const xs = [];
+      for (let x = 4; x < G - 4; x += step) xs.push(x);
+      if (flip) xs.reverse();
+      for (const x of xs) pts.push([x, y]);
+      flip = !flip;
+    }
+  }
+  for (const [fx, fy] of pts) tryAddCell(Math.round(fx), Math.round(fy));
+  // smooth rainbow along the path so the chase direction is visible
+  px.forEach((p, j) => { p.hue = (j / px.length) * 360; });
+}
+
 function mouseDragged() {
   if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
   // paint every cell the pointer crosses, interpolating between drag samples
@@ -516,6 +595,42 @@ document.getElementById('btn-restart').addEventListener('click', () => {
 document.getElementById('btn-clear').addEventListener('click', () => {
   settings.gridSize = Number(document.getElementById('in-grid').value);
   clearSim();
+});
+
+function syncUI() {
+  const set = (id, v) => { document.getElementById(id).value = v; };
+  const check = (id, v) => { document.getElementById(id).checked = v; };
+  check('in-wrap', settings.wrap);
+  check('in-corpses', settings.corpses);
+  check('in-shuffled', settings.shuffled);
+  check('in-inherit', settings.inherit);
+  set('in-moves', settings.moves);
+  set('in-speedmode', settings.speedMode);
+  set('in-strategy', settings.aggressivePct);
+  document.getElementById('val-strategy').textContent = settings.aggressivePct;
+  set('in-jitter', settings.jitter);
+  document.getElementById('val-jitter').textContent = settings.jitter;
+  set('in-vision', settings.vision);
+  document.getElementById('val-vision').textContent = settings.vision >= 42 ? '∞' : settings.vision;
+  set('in-starve', settings.starve);
+  document.getElementById('val-starve').textContent = settings.starve === 0 ? 'off' : settings.starve;
+  set('in-rings', settings.rings);
+  document.getElementById('val-rings').textContent = settings.rings;
+}
+
+document.getElementById('in-recipe').addEventListener('input', e => {
+  const r = RECIPES[e.target.value];
+  if (!r) return;
+  Object.assign(settings, r);
+  syncUI();
+  if (paused) { paused = false; pauseBtn.textContent = 'pause'; }
+  seedSim();
+});
+
+document.getElementById('in-shape').addEventListener('input', e => {
+  if (!e.target.value) return;
+  drawShape(e.target.value);
+  e.target.value = ''; // an action, not a state — lets you re-pick the same shape
 });
 </script>
 </body>
