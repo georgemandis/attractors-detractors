@@ -58,6 +58,12 @@
     <label>corpses block <input id="in-corpses" type="checkbox"></label>
     <label>shuffled order <input id="in-shuffled" type="checkbox" checked></label>
     <label>inherit prey <input id="in-inherit" type="checkbox" checked></label>
+    <label>moves
+      <select id="in-moves">
+        <option value="all" selected>all 8</option>
+        <option value="orthogonal">orthogonal</option>
+        <option value="diagonal">diagonal</option>
+      </select></label>
     <label>aggressive % <span class="val" id="val-strategy">50</span>
       <input id="in-strategy" type="range" min="0" max="100" step="5" value="50"></label>
     <label>jitter % <span class="val" id="val-jitter">0</span>
@@ -77,6 +83,7 @@ const settings = {
   aggressivePct: 50,  // % of pixels playing the aggressive strategy
   inherit: true,      // catcher inherits its victim's prey (ring never breaks)
   jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
+  moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
   trails: true,
   chaseLines: false,
 };
@@ -100,11 +107,17 @@ function aliveCount() {
   return n;
 }
 
-const OFFSETS = [
-  [-1, -1], [0, -1], [1, -1],
-  [-1,  0], [0,  0], [1,  0],
-  [-1,  1], [0,  1], [1,  1],
-];
+const DIRS = {
+  all: [
+    [-1, -1], [0, -1], [1, -1],
+    [-1,  0], [0,  0], [1,  0],
+    [-1,  1], [0,  1], [1,  1],
+  ],
+  orthogonal: [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]],
+  // diagonal movers can never change checkerboard parity, so cross-parity
+  // prey is caught by landing orthogonally adjacent instead of on top
+  diagonal: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+};
 
 function dist2(x1, y1, x2, y2) {
   const G = settings.gridSize;
@@ -126,7 +139,7 @@ function stepPixel(i) {
   const G = settings.gridSize;
   const cands = [];
   let best = [], bestA = Infinity, bestB = Infinity;
-  for (const [ox, oy] of OFFSETS) {
+  for (const [ox, oy] of DIRS[settings.moves]) {
     let nx = p.x + ox, ny = p.y + oy;
     if (settings.wrap) {
       nx = (nx + G) % G;
@@ -161,7 +174,10 @@ function stepPixel(i) {
     : best[Math.floor(random(best.length))];
   if (m.x === p.x && m.y === p.y) return;
 
-  if (chasing && m.x === prey.x && m.y === prey.y) {
+  const ontoPrey = chasing && m.x === prey.x && m.y === prey.y;
+  const adjCapture = chasing && !ontoPrey && settings.moves === 'diagonal'
+    && dist2(m.x, m.y, prey.x, prey.y) === 1;
+  if (ontoPrey || adjCapture) {
     prey.alive = false;
     occ.delete(cellKey(prey.x, prey.y));
     captures++;
@@ -173,7 +189,7 @@ function stepPixel(i) {
     }
     if (settings.corpses) {
       corpseCells.add(cellKey(prey.x, prey.y));
-      return; // corpse keeps the cell; catcher stays put
+      if (ontoPrey) return; // corpse keeps the cell; catcher stays put
     }
   }
   occ.delete(cellKey(p.x, p.y));
@@ -388,6 +404,10 @@ bindCheck('in-lines', 'chaseLines');
 
 bindRange('in-strategy', 'val-strategy', v => { settings.aggressivePct = v; });
 bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; });
+
+document.getElementById('in-moves').addEventListener('input', e => {
+  settings.moves = e.target.value;
+});
 
 const pauseBtn = document.getElementById('btn-pause');
 pauseBtn.addEventListener('click', () => {
