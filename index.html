@@ -49,6 +49,8 @@
       <input id="in-count" type="range" min="10" max="500" step="10" value="100"></label>
     <label>grid <span class="val" id="val-grid">80</span>
       <input id="in-grid" type="range" min="40" max="120" step="10" value="80"></label>
+    <label>rings <span class="val" id="val-rings">1</span>
+      <input id="in-rings" type="range" min="1" max="8" step="1" value="1"></label>
   </fieldset>
   <fieldset>
     <legend>live</legend>
@@ -86,6 +88,7 @@
 const settings = {
   count: 100,
   gridSize: 80,
+  rings: 1,           // number of independent chains, applied on restart
   speed: 10,          // ticks per second
   wrap: true,
   corpses: false,     // corpses block movement
@@ -283,11 +286,26 @@ function seedSim() {
     // temper is a fixed draw in [0,1): the pixel plays aggressive while
     // temper*100 < aggressivePct, so the slider converts pixels smoothly
     px.push({
-      x, y, hue: (i / N) * 360, alive: true, temper: random(1),
-      prey: (i + 1) % N, hunter: (i - 1 + N) % N, hunger: 0,
+      x, y, hue: 0, alive: true, temper: random(1),
+      prey: i, hunter: i, hunger: 0,
     });
     occ.set(k, i);
     i++;
+  }
+  // link K independent rings over consecutive index ranges, each with its
+  // own hue family (a single ring keeps the full rainbow)
+  const K = Math.max(1, Math.min(settings.rings, N));
+  let start = 0;
+  for (let r = 0; r < K; r++) {
+    const size = Math.floor(N / K) + (r < N % K ? 1 : 0);
+    const span = K === 1 ? 360 : Math.min(60, (360 / K) * 0.6);
+    for (let j = 0; j < size; j++) {
+      const p = px[start + j];
+      p.prey = start + (j + 1) % size;
+      p.hunter = start + (j - 1 + size) % size;
+      p.hue = ((r * 360) / K + (j / size) * span) % 360;
+    }
+    start += size;
   }
   chainHead = N > 0 ? 0 : null;
   background(11, 11, 14);
@@ -427,6 +445,7 @@ function bindRange(id, valId, onInput) {
 
 bindRange('in-count', 'val-count', null);            // applied on restart
 bindRange('in-grid', 'val-grid', null);              // applied on restart
+bindRange('in-rings', 'val-rings', v => { settings.rings = v; }); // used at next seed
 bindRange('in-speed', 'val-speed', v => { settings.speed = v; });
 
 function bindCheck(id, field) {

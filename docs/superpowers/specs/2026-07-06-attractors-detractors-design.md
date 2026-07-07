@@ -44,6 +44,12 @@ onto the prey's cell still capture. 0 is fully deterministic strategy;
 temperament class moves only on even ticks — half speed. Class membership
 follows the live aggressive % slider.
 
+**Multiple rings.** The *rings* slider (applied on restart) splits the seeded
+population into K independent chains. Rings never interlink — captures and
+inheritance stay within a ring — so they interact only by competing for
+space. Each ring gets its own hue family (~60° band); a single ring keeps
+the full rainbow. Click-added pixels splice into ring 0's seam.
+
 **Hunger.** With *starve after* set, any pixel with a living prey runs a
 starvation clock; a kill resets it, and exceeding the limit kills the hunter
 (body follows the usual ghost/corpse rules; with inherit on, the ring closes
@@ -125,6 +131,7 @@ brutal resolutions.
 |---|---|---|
 | Pixel count | slider 10–500 | 100 |
 | Grid size | slider (square, e.g. 40–120) | 80 |
+| Rings | slider 1–8 (on restart) | 1 |
 | Speed (ticks/sec) | slider | ~10 |
 | Pause / single-step | buttons | running |
 | Topology | toggle wrap/walls | wrap |
