@@ -60,6 +60,8 @@
     <label>inherit prey <input id="in-inherit" type="checkbox" checked></label>
     <label>aggressive % <span class="val" id="val-strategy">50</span>
       <input id="in-strategy" type="range" min="0" max="100" step="5" value="50"></label>
+    <label>jitter % <span class="val" id="val-jitter">0</span>
+      <input id="in-jitter" type="range" min="0" max="100" step="5" value="0"></label>
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
   </fieldset>
@@ -74,6 +76,7 @@ const settings = {
   shuffled: true,     // shuffled turn order vs fixed ring order
   aggressivePct: 50,  // % of pixels playing the aggressive strategy
   inherit: true,      // catcher inherits its victim's prey (ring never breaks)
+  jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
   trails: true,
   chaseLines: false,
 };
@@ -121,6 +124,7 @@ function stepPixel(i) {
   if (!chasing && !fleeing) return;
 
   const G = settings.gridSize;
+  const cands = [];
   let best = [], bestA = Infinity, bestB = Infinity;
   for (const [ox, oy] of OFFSETS) {
     let nx = p.x + ox, ny = p.y + oy;
@@ -135,6 +139,7 @@ function stepPixel(i) {
     const isPreyCell = chasing && nx === prey.x && ny === prey.y;
     const occupant = occ.get(k);
     if (occupant !== undefined && occupant !== i && !isPreyCell) continue;
+    cands.push({ x: nx, y: ny });
 
     // Inactive criteria contribute a constant 0, which never affects ordering.
     const dPrey = chasing ? dist2(nx, ny, prey.x, prey.y) : 0;
@@ -148,8 +153,12 @@ function stepPixel(i) {
       best.push({ x: nx, y: ny });
     }
   }
-  if (best.length === 0) return;
-  const m = best[Math.floor(random(best.length))];
+  if (cands.length === 0) return;
+  // a jittering pixel ignores strategy for this tick and moves at random —
+  // random blunders onto the prey's cell still capture
+  const m = (random(1) * 100 < settings.jitter)
+    ? cands[Math.floor(random(cands.length))]
+    : best[Math.floor(random(best.length))];
   if (m.x === p.x && m.y === p.y) return;
 
   if (chasing && m.x === prey.x && m.y === prey.y) {
@@ -378,6 +387,7 @@ bindCheck('in-trails', 'trails');
 bindCheck('in-lines', 'chaseLines');
 
 bindRange('in-strategy', 'val-strategy', v => { settings.aggressivePct = v; });
+bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; });
 
 const pauseBtn = document.getElementById('btn-pause');
 pauseBtn.addEventListener('click', () => {
