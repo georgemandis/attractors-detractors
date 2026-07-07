@@ -40,6 +40,10 @@ ignoring strategy and taking a uniformly random legal move. Random blunders
 onto the prey's cell still capture. 0 is fully deterministic strategy;
 100 is a random walk.
 
+**Speed classes.** With *fast hunters* (or *fast cowards*), the other
+temperament class moves only on even ticks — half speed. Class membership
+follows the live aggressive % slider.
+
 **Vision.** Pixels only react to prey/hunters within the *vision* radius
 (Euclidean, torus-aware; ∞ by default). A pixel whose living targets are all
 out of sight wanders randomly in search of them; chases ignite on encounter.
@@ -124,6 +128,7 @@ brutal resolutions.
 | Jitter % | slider 0–100 | 0 |
 | Moves | select all 8 / orthogonal / diagonal | all 8 |
 | Vision | slider 2–41 cells, or ∞ | ∞ |
+| Speed classes | select uniform / fast hunters / fast cowards | uniform |
 | Trails | toggle | on |
 | Chase lines | toggle | off |
 | Restart | button (reseeds) | — |

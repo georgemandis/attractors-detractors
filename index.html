@@ -64,6 +64,12 @@
         <option value="orthogonal">orthogonal</option>
         <option value="diagonal">diagonal</option>
       </select></label>
+    <label>speed classes
+      <select id="in-speedmode">
+        <option value="uniform" selected>uniform</option>
+        <option value="fast-aggressive">fast hunters</option>
+        <option value="fast-cautious">fast cowards</option>
+      </select></label>
     <label>aggressive % <span class="val" id="val-strategy">50</span>
       <input id="in-strategy" type="range" min="0" max="100" step="5" value="50"></label>
     <label>jitter % <span class="val" id="val-jitter">0</span>
@@ -87,6 +93,7 @@ const settings = {
   jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
   moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
   vision: 42,         // sight radius in cells; 42 means unlimited
+  speedMode: 'uniform', // uniform | fast-aggressive | fast-cautious (slow class skips odd ticks)
   trails: true,
   chaseLines: false,
 };
@@ -215,7 +222,15 @@ function isSettled() {
 
 function runTick() {
   const order = [];
-  for (let i = 0; i < px.length; i++) if (px[i].alive) order.push(i);
+  for (let i = 0; i < px.length; i++) {
+    if (!px[i].alive) continue;
+    if (settings.speedMode !== 'uniform' && tick % 2 === 1) {
+      const aggr = px[i].temper * 100 < settings.aggressivePct;
+      const fast = settings.speedMode === 'fast-aggressive' ? aggr : !aggr;
+      if (!fast) continue; // slow class sits out odd ticks
+    }
+    order.push(i);
+  }
   if (settings.shuffled) {
     for (let j = order.length - 1; j > 0; j--) {
       const r = Math.floor(random(j + 1));
@@ -415,6 +430,10 @@ bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; });
 
 document.getElementById('in-moves').addEventListener('input', e => {
   settings.moves = e.target.value;
+});
+
+document.getElementById('in-speedmode').addEventListener('input', e => {
+  settings.speedMode = e.target.value;
 });
 
 const visionEl = document.getElementById('in-vision');
