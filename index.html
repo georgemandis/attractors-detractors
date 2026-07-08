@@ -12,7 +12,12 @@
     background: #0b0b0e; color: #cfcfd6;
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  #sketch canvas { display: block; border: 1px solid #26262e; }
+  #sketch canvas { display: block; border: 1px solid #26262e; touch-action: none; }
+  @media (max-width: 900px) {
+    body { flex-direction: column; }
+    #panel { width: auto; }
+    #sketch canvas { width: 100% !important; height: auto !important; }
+  }
   #panel { width: 250px; display: flex; flex-direction: column; gap: 10px; }
   #panel h1 { font-size: 14px; margin: 0 0 4px; color: #ececf2; font-weight: 600; }
   #panel label { display: flex; justify-content: space-between; align-items: center; gap: 8px; white-space: nowrap; }
@@ -32,7 +37,8 @@
   #focus { color: #9ecbff; }
   fieldset { border: 1px solid #26262e; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
   legend { color: #8f8f9c; padding: 0 4px; }
-  .row { display: flex; gap: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  #btn-rec.recording { color: #ff6b6b; border-color: #ff6b6b; }
 </style>
 </head>
 <body>
@@ -49,6 +55,7 @@
     <button id="btn-restart">restart</button>
     <button id="btn-clear">clear</button>
     <button id="btn-share">share</button>
+    <button id="btn-rec">rec</button>
   </div>
   <div id="hint">click or drag on empty cells to add pixels to the chain — pause first to draw clean shapes. on 3D surfaces, drag to orbit</div>
   <fieldset>
@@ -1329,6 +1336,38 @@ document.getElementById('in-shape').addEventListener('input', e => {
 const panelEl = document.getElementById('panel');
 panelEl.addEventListener('input', () => syncHash());
 panelEl.addEventListener('click', e => { if (e.target.tagName === 'BUTTON') syncHash(); });
+
+// record the canvas to a downloadable WebM
+let recorder = null;
+const recBtn = document.getElementById('btn-rec');
+recBtn.addEventListener('click', () => {
+  if (recorder) { recorder.stop(); return; }
+  try {
+    const stream = document.querySelector('canvas').captureStream(30);
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9' : 'video/webm';
+    recorder = new MediaRecorder(stream, { mimeType: mime });
+    const chunks = [];
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+      const url = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'attractors-detractors.webm';
+      a.click();
+      URL.revokeObjectURL(url);
+      recorder = null;
+      recBtn.textContent = 'rec';
+      recBtn.classList.remove('recording');
+    };
+    recorder.start();
+    recBtn.textContent = 'stop';
+    recBtn.classList.add('recording');
+  } catch (err) {
+    recorder = null;
+    recBtn.textContent = 'rec n/a';
+  }
+});
 
 const shareBtn = document.getElementById('btn-share');
 shareBtn.addEventListener('click', async () => {
