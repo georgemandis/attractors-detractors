@@ -127,6 +127,12 @@ Vision scales by cell size (2/G) to stay comparable. Switching surfaces
 writes the state hash and reloads the page, since p5 cannot reliably swap
 P2D and WEBGL renderers on a live canvas.
 
+A *solid body (3D)* toggle (default off) draws an opaque, softly lit body
+inset ~3.5% beneath the surface so the depth buffer occludes the far side —
+pixels read as crawling on a solid instead of floating in a glass shell.
+Sphere/cube/torus use p5 primitives; the gem is a hand-built octahedron.
+Off preserves the see-through look.
+
 A fifth surface, *torus*, embeds the flat wrap-mode grid as a donut. Its
 metric is the same wrapped grid distance as flat mode (scaled by 2/G), so
 dynamics are identical to flat+wrap — only the view changes.

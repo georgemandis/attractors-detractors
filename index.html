@@ -130,6 +130,7 @@
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
     <label>sound <input id="in-sound" type="checkbox"></label>
+    <label>solid body (3D) <input id="in-solid" type="checkbox"></label>
     <label>brush
       <select id="in-brush">
         <option value="pixels" selected>pixels</option>
@@ -161,6 +162,7 @@ const settings = {
   chaseLines: false,
   sound: false,       // capture/starvation sonification (WebAudio)
   brush: 'pixels',    // what clicking paints: pixels | walls | erase (walls)
+  solidBody: false,   // 3D: opaque body occludes the far side (off = see-through)
 };
 
 let px = [];                  // {x, y, hue, alive}
@@ -1085,6 +1087,31 @@ function render3D() {
   orbitControl(1, 1, 0.2);
   const R = 220;
   const cellPx = Math.max(2, ((2 * R) / surf.G) * 0.8);
+  if (settings.solidBody) {
+    // an opaque body inset just below the surface: the depth buffer hides
+    // the far side, so pixels read as crawling on a solid
+    push();
+    ambientLight(70);
+    directionalLight(130, 130, 145, -0.4, 0.5, -1);
+    noStroke();
+    fill(26, 26, 33);
+    const s = R * 0.965;
+    if (settings.surface === 'sphere') {
+      sphere(s, 32, 24);
+    } else if (settings.surface === 'cube') {
+      box(2 * s);
+    } else if (settings.surface === 'torus') {
+      torus(0.72 * R, 0.34 * R * 0.94, 40, 24);
+    } else if (settings.surface === 'gem') {
+      beginShape(TRIANGLES);
+      for (const sx of [s, -s]) for (const sy of [s, -s]) for (const sz of [s, -s]) {
+        vertex(sx, 0, 0); vertex(0, sy, 0); vertex(0, 0, sz);
+      }
+      endShape();
+    }
+    pop();
+    noLights();
+  }
   noFill();
   stroke(48);
   strokeWeight(1);
@@ -1198,6 +1225,7 @@ bindCheck('in-shuffled', 'shuffled');
 bindCheck('in-inherit', 'inherit');
 bindCheck('in-rivalry', 'rivalry');
 bindCheck('in-evolve', 'evolve');
+bindCheck('in-solid', 'solidBody');
 
 // corpses toggle applies retroactively: ON solidifies every existing body,
 // OFF releases them all back to walkable ghosts
@@ -1284,6 +1312,7 @@ function stateToHash() {
     'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
     'sf=' + s.surface, 'snd=' + (+s.sound), 'rv=' + (+s.rivalry), 'e=' + (+s.evolve),
+    'sb=' + (+s.solidBody),
   ];
   if (runSeed !== null) parts.push('sd=' + runSeed);
   if (lastShape) parts.push('shape=' + lastShape);
@@ -1309,7 +1338,7 @@ function applyHash() {
   num('v', 'vision', 2, 42); num('st', 'starve', 0, 400);
   bool('w', 'wrap'); bool('c', 'corpses'); bool('o', 'shuffled'); bool('i', 'inherit');
   bool('t', 'trails'); bool('l', 'chaseLines'); bool('snd', 'sound'); bool('rv', 'rivalry');
-  bool('e', 'evolve');
+  bool('e', 'evolve'); bool('sb', 'solidBody');
   if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
@@ -1347,6 +1376,7 @@ function syncUI() {
   check('in-inherit', settings.inherit);
   check('in-rivalry', settings.rivalry);
   check('in-evolve', settings.evolve);
+  check('in-solid', settings.solidBody);
   set('in-moves', settings.moves);
   set('in-speedmode', settings.speedMode);
   set('in-strategy', settings.aggressivePct);
