@@ -1122,6 +1122,9 @@ function setup() {
   if (fromHash) syncUI();
   seedSim();
   if (typeof fromHash === 'string') drawShape(fromHash); // shape links open paused, ready to resume
+  // normalize the address bar immediately: a mangled or partial hash gets
+  // rewritten clean (with the run seed), so re-copies can't inherit damage
+  syncHash();
 }
 
 function draw() {
@@ -1283,8 +1286,14 @@ function applyHash() {
     const sd = Number(q.get('sd'));
     if (Number.isFinite(sd)) pendingSeed = Math.abs(Math.floor(sd));
   }
-  const shape = q.get('shape');
-  return (shape && ['circle', 'square', 'spiral', 'line', 'lattice'].includes(shape)) ? shape : true;
+  // salvage mangled links: URL copy/paste often glues trailing characters
+  // onto the last param ("circleo"), so accept a valid-name prefix too
+  const shapeNames = ['circle', 'square', 'spiral', 'line', 'lattice'];
+  let shape = q.get('shape');
+  if (shape && !shapeNames.includes(shape)) {
+    shape = shapeNames.find(nm => shape.startsWith(nm)) || null;
+  }
+  return shape ? shape : true;
 }
 
 function syncUI() {

@@ -33,6 +33,30 @@ A single-file [p5.js](https://p5js.org/) sketch. No build step — open
   torus (the torus is literally the flat wrap-mode grid, finally visible as
   the donut it always was). Drag to orbit.
 
+## Determinism
+
+Every run draws a seed (`sd=` in the share hash), and **all** simulation
+randomness flows from that one seeded stream:
+
+- initial pixel placement (seed and restart)
+- each pixel's temperament (the aggressive/cautious draw) — at seeding,
+  when click/drag painting, when drawing shape presets, and for
+  evolution births
+- shuffled turn order, every tick
+- tie-breaks between equally good moves
+- jitter moves
+- wander moves (searching for out-of-sight targets)
+- evolution: which survivor parents a newborn, its temperament mutation,
+  its hue drift, and its spawn cell
+
+The stream is re-anchored at three points: **page load** (uses the hash
+seed if present, otherwise draws fresh), **restart** (always draws a fresh
+seed), and **clear** — including shape presets, which clear first —
+(rewinds to the current run's seed, so "clear → shape → resume" replays
+identically no matter when you click). What is *not* covered: live human
+intervention. Painting cells or changing sliders mid-run perturbs a replay,
+because your timing and pointer aren't part of the seed.
+
 ## Parameters
 
 Topology (wrap/walls), corpses as obstacles, turn order, prey inheritance,
