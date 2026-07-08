@@ -41,6 +41,7 @@
     <button id="btn-step">step</button>
     <button id="btn-restart">restart</button>
     <button id="btn-clear">clear</button>
+    <button id="btn-share">share</button>
   </div>
   <div id="hint">click or drag on empty cells to add pixels to the chain — pause first to draw clean shapes</div>
   <fieldset>
@@ -133,6 +134,7 @@ let tick = 0, captures = 0, starved = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
 let chainHead = null;         // whom the next click-added pixel will chase
+let lastShape = null;         // shape preset the current grid was drawn from, for share links
 
 const statsEl = document.getElementById('stats');
 
@@ -330,12 +332,14 @@ function seedSim() {
     start += size;
   }
   chainHead = N > 0 ? 0 : null;
+  lastShape = null;
   background(11, 11, 14);
 }
 
 function clearSim() {
   px = []; occ = new Map(); corpseCells = new Set();
   tick = 0; captures = 0; starved = 0; settled = true; acc = 0; chainHead = null;
+  lastShape = null;
   background(11, 11, 14);
 }
 
@@ -407,6 +411,7 @@ const RECIPES = {
 function drawShape(name) {
   if (!paused) { paused = true; pauseBtn.textContent = 'resume'; }
   clearSim();
+  lastShape = name;
   const G = settings.gridSize, c = (G - 1) / 2;
   const pts = [];
   if (name === 'circle') {
@@ -448,7 +453,7 @@ function drawShape(name) {
     seen.add(k);
     cells.push([cx, cy]);
   }
-  const want = Math.min(Number(document.getElementById('in-count').value), cells.length);
+  const want = Math.min(settings.count, cells.length);
   for (let j = 0; j < want; j++) {
     tryAddCell(...cells[Math.floor((j * cells.length) / want)]);
   }
@@ -511,7 +516,10 @@ function render() {
 function setup() {
   const c = createCanvas(640, 640);
   c.parent('sketch');
+  const fromHash = applyHash();
+  if (fromHash) syncUI();
   seedSim();
+  if (typeof fromHash === 'string') drawShape(fromHash); // shape links open paused, ready to resume
 }
 
 function draw() {
@@ -536,7 +544,7 @@ function bindRange(id, valId, onInput) {
   });
 }
 
-bindRange('in-count', 'val-count', null);            // applied on restart
+bindRange('in-count', 'val-count', v => { settings.count = v; }); // used at next seed or shape draw
 bindRange('in-grid', 'val-grid', null);              // applied on restart
 bindRange('in-rings', 'val-rings', v => { settings.rings = v; }); // used at next seed
 bindRange('in-speed', 'val-speed', v => { settings.speed = v; });
@@ -611,9 +619,55 @@ document.getElementById('btn-clear').addEventListener('click', () => {
   clearSim();
 });
 
+function stateToHash() {
+  const s = settings;
+  const parts = [
+    'n=' + s.count, 'g=' + s.gridSize, 'r=' + s.rings, 'sp=' + s.speed,
+    'w=' + (+s.wrap), 'c=' + (+s.corpses), 'o=' + (+s.shuffled), 'i=' + (+s.inherit),
+    'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
+    'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
+  ];
+  if (lastShape) parts.push('shape=' + lastShape);
+  return parts.join('&');
+}
+
+function syncHash() {
+  history.replaceState(null, '', '#' + stateToHash());
+}
+
+// Returns the shape name to draw, true if any settings were applied, else false.
+function applyHash() {
+  if (location.hash.length < 2) return false;
+  const q = new URLSearchParams(location.hash.slice(1));
+  const num = (k, field, min, max) => {
+    if (!q.has(k)) return;
+    const v = Number(q.get(k));
+    if (!isNaN(v)) settings[field] = Math.min(max, Math.max(min, v));
+  };
+  const bool = (k, field) => { if (q.has(k)) settings[field] = q.get(k) === '1'; };
+  num('n', 'count', 10, 500); num('g', 'gridSize', 40, 120); num('r', 'rings', 1, 8);
+  num('sp', 'speed', 1, 60); num('a', 'aggressivePct', 0, 100); num('j', 'jitter', 0, 100);
+  num('v', 'vision', 2, 42); num('st', 'starve', 0, 400);
+  bool('w', 'wrap'); bool('c', 'corpses'); bool('o', 'shuffled'); bool('i', 'inherit');
+  bool('t', 'trails'); bool('l', 'chaseLines');
+  if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
+  const sm = q.get('sm');
+  if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
+  const shape = q.get('shape');
+  return (shape && ['circle', 'square', 'spiral', 'line', 'lattice'].includes(shape)) ? shape : true;
+}
+
 function syncUI() {
   const set = (id, v) => { document.getElementById(id).value = v; };
   const check = (id, v) => { document.getElementById(id).checked = v; };
+  set('in-count', settings.count);
+  document.getElementById('val-count').textContent = settings.count;
+  set('in-grid', settings.gridSize);
+  document.getElementById('val-grid').textContent = settings.gridSize;
+  set('in-speed', settings.speed);
+  document.getElementById('val-speed').textContent = settings.speed;
+  check('in-trails', settings.trails);
+  check('in-lines', settings.chaseLines);
   check('in-wrap', settings.wrap);
   check('in-corpses', settings.corpses);
   check('in-shuffled', settings.shuffled);
@@ -645,6 +699,23 @@ document.getElementById('in-shape').addEventListener('input', e => {
   if (!e.target.value) return;
   drawShape(e.target.value);
   e.target.value = ''; // an action, not a state — lets you re-pick the same shape
+});
+
+// keep the URL hash in sync with every control change (replaceState: no history spam)
+const panelEl = document.getElementById('panel');
+panelEl.addEventListener('input', () => syncHash());
+panelEl.addEventListener('click', e => { if (e.target.tagName === 'BUTTON') syncHash(); });
+
+const shareBtn = document.getElementById('btn-share');
+shareBtn.addEventListener('click', async () => {
+  syncHash();
+  try {
+    await navigator.clipboard.writeText(location.href);
+    shareBtn.textContent = 'copied!';
+    setTimeout(() => { shareBtn.textContent = 'share'; }, 1200);
+  } catch {
+    prompt('copy this link:', location.href);
+  }
 });
 </script>
 </body>

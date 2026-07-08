@@ -166,6 +166,16 @@ Two selects compose like the manual workflow (recipe first, then shape):
   (capped at the path length). Tweak parameters, then resume. The select
   snaps back to "—" after drawing so the same shape can be re-picked.
 
+## Shareable state
+
+The URL hash mirrors all sim settings (short keys, e.g. `#n=100&g=80&a=50…`)
+plus the active shape preset, updated on every control change via
+`history.replaceState` (no history spam). Opening a hashed link applies the
+settings, syncs the UI, reseeds, and re-draws the shape paused. Values are
+clamped and validated on parse. The *share* button copies the link
+(clipboard with prompt fallback). Hosted via GitHub Pages so links work
+anywhere.
+
 ## Click to add / clear
 
 A *clear* button empties the grid. Clicking any empty cell (walkable ghost
