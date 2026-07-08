@@ -779,6 +779,9 @@ function clearSim() {
   hist = []; popMax = 1;
   wallCells = new Set();
   focusIdx = null;
+  // rewind the RNG to the run seed: clearing (and shape presets, which clear
+  // first) re-anchor determinism no matter how many ticks ran beforehand
+  if (runSeed !== null) randomSeed(runSeed);
   background(11, 11, 14);
 }
 
