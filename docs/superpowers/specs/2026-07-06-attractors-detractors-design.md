@@ -139,6 +139,34 @@ tempers, shuffles, tie-breaks all flow from the seeded RNG); restart draws
 a fresh seed. Live interaction (clicks, mid-run slider changes) perturbs a
 replay, which is accepted.
 
+## Later additions (2026-07-08)
+
+- **Sonification** (toggle, default off): captures ping pentatonic notes
+  pitched by the victim's hue; starvations rumble low. Raw WebAudio, max 8
+  voices per tick; the checkbox click is the audio-unlock gesture.
+- **Wall paintbrush**: a brush select (pixels / walls / erase walls). Walls
+  are steel-blue terrain cells that block movement and seeding, survive
+  restarts, and are cleared by the clear button. Flat mode only; not in the
+  share hash.
+- **Ring rivalry** (toggle): with K>1 rings, any pixel may trample any
+  pixel of ring (r+1) mod K by landing on it — opportunistic (movement is
+  still chain-driven). The victim's own ring closes around it; normal
+  corpse rules apply. Spatial rock-paper-scissors.
+- **Click to follow**: clicking a living pixel (pixels brush) highlights it
+  with a white ring, a green line to its prey and red to its hunter, plus a
+  bio line (temperament, kills, hunger). Click again to unfollow.
+- **Evolution** (toggle): every death spawns a child of a random survivor
+  at a random empty cell, spliced in behind its parent. Temperament mutates
+  ±0.1, hue drifts ±12° (lineages become color families). Population stays
+  constant; stats gain a born counter. First observed result: under hunger
+  pressure the population evolves cowardice (mean temperament 0.50 → 0.88
+  in 800 ticks).
+- **Recording**: a rec button captures the canvas to a downloadable WebM
+  via MediaRecorder (30 fps).
+- **Touch / responsive**: below 900px the panel stacks under a full-width
+  CSS-scaled canvas; p5 corrects pointer coordinates for the scaling, and
+  `touch-action: none` keeps drawing/orbiting from fighting the scroll.
+
 ## Sparkline and winner card
 
 The panel shows a small population-over-time canvas: alive (green),

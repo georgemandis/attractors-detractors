@@ -38,6 +38,9 @@ A single-file [p5.js](https://p5js.org/) sketch. No build step — open
 Topology (wrap/walls), corpses as obstacles, turn order, prey inheritance,
 movement neighborhoods (8-way / orthogonal / diagonal), aggressive/cautious
 mix, random jitter, vision radius, speed classes, hunger, multiple
-independent rings, trails, chase lines — and 3D surfaces: run the same rules
-on the surface of a cube, sphere, or octahedral gem (drag to orbit). See
-`docs/superpowers/specs/` for the full design.
+independent rings (with optional rock-paper-scissors rivalry between them),
+evolution (deaths spawn mutated children — watch temperament drift under
+selection), drawable walls, sonification, click-to-follow a pixel, WebM
+recording, trails, chase lines — and 3D surfaces: run the same rules on the
+surface of a cube, sphere, octahedral gem, or torus (drag to orbit). Works
+on phones. See `docs/superpowers/specs/` for the full design.
