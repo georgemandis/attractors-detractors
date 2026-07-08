@@ -970,36 +970,55 @@ function render() {
     fill(p.hue, 80, 100);
     rect(p.x * cs, p.y * cs, cs, cs);
   }
-  if (settings.chaseLines) {
-    strokeWeight(1);
-    for (let i = 0; i < px.length; i++) {
-      const p = px[i], q = px[p.prey];
-      if (p.alive && p.prey !== i && q.alive) {
-        stroke(p.hue, 60, 100, 0.35);
-        line(p.x * cs + cs / 2, p.y * cs + cs / 2, q.x * cs + cs / 2, q.y * cs + cs / 2);
+  colorMode(RGB, 255, 255, 255, 255);
+  // annotations live on the overlay so the trails fade can't smear them
+  if (overlay && (settings.chaseLines || focusIdx !== null)) {
+    const o9 = overlay;
+    o9.clear();
+    o9.colorMode(HSB, 360, 100, 100, 1);
+    if (settings.chaseLines) {
+      // faint base line plus bright dots flowing chaser → prey: the drift
+      // direction IS the chase direction (animates even while paused)
+      const phase = (millis() % 700) / 700;
+      const spacing = cs * 3.5;
+      const dotSize = Math.max(2.5, cs * 0.45);
+      for (let i = 0; i < px.length; i++) {
+        const p = px[i], q = px[p.prey];
+        if (!(p.alive && p.prey !== i && q.alive)) continue;
+        const x1 = p.x * cs + cs / 2, y1 = p.y * cs + cs / 2;
+        const x2 = q.x * cs + cs / 2, y2 = q.y * cs + cs / 2;
+        o9.strokeWeight(1);
+        o9.stroke(p.hue, 60, 100, 0.18);
+        o9.line(x1, y1, x2, y2);
+        o9.noStroke();
+        o9.fill(p.hue, 70, 100, 0.9);
+        const d = Math.hypot(x2 - x1, y2 - y1);
+        for (let of2 = phase * spacing; of2 < d; of2 += spacing) {
+          const t = of2 / d;
+          o9.circle(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, dotSize);
+        }
       }
     }
-    noStroke();
-  }
-  // followed pixel: white ring, green line to prey, red line to hunter
-  if (focusIdx !== null && px[focusIdx] && px[focusIdx].alive) {
-    const f = px[focusIdx];
-    const mid = q => [q.x * cs + cs / 2, q.y * cs + cs / 2];
-    strokeWeight(1.5);
-    if (f.prey !== focusIdx && px[f.prey].alive) {
-      stroke(130, 80, 90, 0.8);
-      line(...mid(f), ...mid(px[f.prey]));
+    // followed pixel: white ring, green line to prey, red line to hunter
+    if (focusIdx !== null && px[focusIdx] && px[focusIdx].alive) {
+      const f = px[focusIdx];
+      const mid = q => [q.x * cs + cs / 2, q.y * cs + cs / 2];
+      o9.strokeWeight(1.5);
+      if (f.prey !== focusIdx && px[f.prey].alive) {
+        o9.stroke(130, 80, 90, 0.8);
+        o9.line(...mid(f), ...mid(px[f.prey]));
+      }
+      if (f.hunter !== focusIdx && px[f.hunter].alive) {
+        o9.stroke(0, 80, 100, 0.8);
+        o9.line(...mid(f), ...mid(px[f.hunter]));
+      }
+      o9.noFill();
+      o9.stroke(0, 0, 100, 0.9);
+      o9.rect(f.x * cs - 2, f.y * cs - 2, cs + 4, cs + 4);
+      o9.noStroke();
     }
-    if (f.hunter !== focusIdx && px[f.hunter].alive) {
-      stroke(0, 80, 100, 0.8);
-      line(...mid(f), ...mid(px[f.hunter]));
-    }
-    noFill();
-    stroke(0, 0, 100, 0.9);
-    rect(f.x * cs - 2, f.y * cs - 2, cs + 4, cs + 4);
-    noStroke();
+    image(overlay, 0, 0);
   }
-  colorMode(RGB, 255, 255, 255, 255);
   updateStats();
 }
 
@@ -1096,13 +1115,23 @@ function render3D() {
     push(); translate(q[0] * R, q[1] * R, q[2] * R); box(cellPx); pop();
   }
   if (settings.chaseLines) {
-    strokeWeight(1);
+    // faint base line plus points flowing chaser → prey (see 2D version)
+    const phase = (millis() % 700) / 700;
+    const spacing = cellPx * 3.5;
     for (let i = 0; i < px.length; i++) {
       const p = px[i], q2 = px[p.prey];
-      if (p.alive && p.prey !== i && q2.alive) {
-        stroke(p.hue, 60, 100, 0.35);
-        const A = surf.proj[p.cell], B = surf.proj[q2.cell];
-        line(A[0] * R, A[1] * R, A[2] * R, B[0] * R, B[1] * R, B[2] * R);
+      if (!(p.alive && p.prey !== i && q2.alive)) continue;
+      const A = surf.proj[p.cell], B = surf.proj[q2.cell];
+      strokeWeight(1);
+      stroke(p.hue, 60, 100, 0.18);
+      line(A[0] * R, A[1] * R, A[2] * R, B[0] * R, B[1] * R, B[2] * R);
+      const dx = (B[0] - A[0]) * R, dy = (B[1] - A[1]) * R, dz = (B[2] - A[2]) * R;
+      const d = Math.hypot(dx, dy, dz);
+      strokeWeight(Math.max(2.5, cellPx * 0.45));
+      stroke(p.hue, 70, 100, 0.9);
+      for (let o = phase * spacing; o < d; o += spacing) {
+        const t = o / d;
+        point(A[0] * R + dx * t, A[1] * R + dy * t, A[2] * R + dz * t);
       }
     }
     noStroke();
@@ -1111,9 +1140,13 @@ function render3D() {
   updateStats();
 }
 
+let overlay = null; // 2D annotation layer (chase lines, focus) — cleared every
+                    // frame so the trails fade can't smear animated markers
+
 function rebuildCanvas() {
   const c = createCanvas(640, 640, mode3D() ? WEBGL : P2D);
   c.parent('sketch');
+  overlay = mode3D() ? null : createGraphics(640, 640);
 }
 
 function setup() {

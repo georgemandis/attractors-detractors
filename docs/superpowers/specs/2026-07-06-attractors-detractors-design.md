@@ -186,7 +186,12 @@ color, index, temperament, kill count (tracked per pixel), and the tick.
   ghosts; blocking corpses render solid gray. Because ghosts are walkable,
   a pixel can die on top of an older body — blocking is tracked per cell.
 - Optional fading trails (toggle).
-- Optional thin lines from each chaser to its living prey (toggle).
+- Optional chase lines (toggle): a faint line from each chaser to its
+  living prey with bright dots flowing along it chaser → prey — the drift
+  direction is the chase direction, animated off the wall clock so it reads
+  even while paused. In 2D the lines and the focus highlight render on a
+  separate overlay layer cleared every frame, so the trails fade cannot
+  smear them (in 3D the background fully clears, so no overlay is needed).
 - Stats line: tick count, alive count, capture count.
 
 ## Controls
