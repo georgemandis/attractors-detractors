@@ -26,6 +26,9 @@
   #stats { color: #8f8f9c; min-height: 1.5em; }
   #hint { color: #5c5c68; font-size: 12px; }
   #stats .settled { color: #e6c96b; }
+  #spark { display: block; border: 1px solid #26262e; border-radius: 4px; }
+  #winner { color: #e6c96b; }
+  #winner .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
   fieldset { border: 1px solid #26262e; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
   legend { color: #8f8f9c; padding: 0 4px; }
   .row { display: flex; gap: 8px; }
@@ -36,6 +39,8 @@
 <aside id="panel">
   <h1>attractors / detractors</h1>
   <div id="stats"></div>
+  <canvas id="spark" width="220" height="44"></canvas>
+  <div id="winner" hidden></div>
   <div class="row">
     <button id="btn-pause">pause</button>
     <button id="btn-step">step</button>
@@ -146,6 +151,8 @@ let chainHead = null;         // whom the next click-added pixel will chase
 let lastShape = null;         // shape preset the current grid was drawn from, for share links
 let runSeed = null;           // RNG seed of the current run — share links replay it
 let pendingSeed = null;       // seed parsed from an opened share link, consumed by the next seed
+let hist = [];                // per-tick [alive, captures, starved] for the sparkline
+let popMax = 1;               // population high-water mark, scales the sparkline
 
 const statsEl = document.getElementById('stats');
 
@@ -395,6 +402,7 @@ function stepPixel(i) {
     prey.alive = false;
     occ.delete(cellKey(prey.x, prey.y));
     captures++;
+    p.kills = (p.kills || 0) + 1;
     p.hunger = 0; // a kill resets the starvation clock
     if (settings.inherit) {
       // catcher inherits the victim's prey; that prey now fears the catcher.
@@ -463,6 +471,7 @@ function stepPixel3D(i) {
     prey.alive = false;
     occ.delete(prey.cell);
     captures++;
+    p.kills = (p.kills || 0) + 1;
     p.hunger = 0;
     if (settings.inherit) {
       p.prey = prey.prey;
@@ -521,6 +530,8 @@ function runTick() {
   }
   tick++;
   settled = isSettled();
+  hist.push([aliveCount(), captures, starved]);
+  if (hist.length > 4096) hist = hist.filter((_, j) => j % 2 === 0);
 }
 
 function starveOut(i) {
@@ -540,6 +551,7 @@ function seedSim() {
   const N = settings.count, G = settings.gridSize;
   px = []; occ = new Map(); corpseCells = new Set();
   tick = 0; captures = 0; starved = 0; settled = false; acc = 0;
+  hist = []; popMax = Math.max(1, N);
   // every run is seeded so a share link can replay it exactly; restart
   // draws a fresh seed, opening a link consumes the one it carried
   runSeed = pendingSeed !== null ? pendingSeed : Math.floor(Math.random() * 1e9);
@@ -602,6 +614,7 @@ function clearSim() {
   px = []; occ = new Map(); corpseCells = new Set();
   tick = 0; captures = 0; starved = 0; settled = true; acc = 0; chainHead = null;
   lastShape = null;
+  hist = []; popMax = 1;
   background(11, 11, 14);
 }
 
@@ -776,10 +789,46 @@ function render() {
   updateStats();
 }
 
+const sparkEl = document.getElementById('spark');
+const winnerEl = document.getElementById('winner');
+
 function updateStats() {
-  statsEl.innerHTML = 'tick ' + tick + ' · alive ' + aliveCount() + ' · captures ' + captures
+  const alive = aliveCount();
+  statsEl.innerHTML = 'tick ' + tick + ' · alive ' + alive + ' · captures ' + captures
     + (starved > 0 ? ' · starved ' + starved : '')
-    + (settled && aliveCount() > 0 ? ' · <span class="settled">settled</span>' : '');
+    + (settled && alive > 0 ? ' · <span class="settled">settled</span>' : '');
+  // sparkline: population over time (green alive, red captures, yellow starved)
+  const sc = sparkEl.getContext('2d');
+  const W = sparkEl.width, H = sparkEl.height;
+  sc.clearRect(0, 0, W, H);
+  if (hist.length > 1) {
+    const plot = (idx, color) => {
+      sc.beginPath();
+      for (let x = 0; x < W; x++) {
+        const h = hist[Math.min(hist.length - 1, Math.floor((x * hist.length) / W))];
+        const y = H - 1 - (h[idx] / popMax) * (H - 2);
+        x === 0 ? sc.moveTo(x, y) : sc.lineTo(x, y);
+      }
+      sc.strokeStyle = color;
+      sc.lineWidth = 1;
+      sc.stroke();
+    };
+    plot(1, '#e05661');
+    plot(2, '#e6c96b');
+    plot(0, '#7ee787');
+  }
+  // winner card for the last pixel standing
+  if (settled && alive === 1 && px.length > 1) {
+    const wIdx = px.findIndex(p => p.alive);
+    const w = px[wIdx];
+    const temperament = w.temper * 100 < settings.aggressivePct ? 'aggressive' : 'cautious';
+    winnerEl.hidden = false;
+    winnerEl.innerHTML = '<span class="swatch" style="background:hsl(' + Math.round(w.hue)
+      + ',80%,60%)"></span> pixel #' + wIdx + ' survives — ' + temperament
+      + ' · ' + (w.kills || 0) + ' kill' + ((w.kills || 0) === 1 ? '' : 's') + ' · ' + tick + ' ticks';
+  } else {
+    winnerEl.hidden = true;
+  }
 }
 
 function render3D() {

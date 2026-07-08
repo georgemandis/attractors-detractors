@@ -127,6 +127,26 @@ Vision scales by cell size (2/G) to stay comparable. Switching surfaces
 writes the state hash and reloads the page, since p5 cannot reliably swap
 P2D and WEBGL renderers on a live canvas.
 
+A fifth surface, *torus*, embeds the flat wrap-mode grid as a donut. Its
+metric is the same wrapped grid distance as flat mode (scaled by 2/G), so
+dynamics are identical to flat+wrap — only the view changes.
+
+## Seeded runs
+
+Every seed draws a run seed (`randomSeed`), carried in the share hash as
+`sd=`. Opening a link replays the exact run tick-for-tick (placement,
+tempers, shuffles, tie-breaks all flow from the seeded RNG); restart draws
+a fresh seed. Live interaction (clicks, mid-run slider changes) perturbs a
+replay, which is accepted.
+
+## Sparkline and winner card
+
+The panel shows a small population-over-time canvas: alive (green),
+cumulative captures (red), cumulative starved (yellow), scaled to the
+population high-water mark; history decimates by 2 beyond 4096 ticks.
+When a run settles with exactly one survivor, a winner card shows its
+color, index, temperament, kill count (tracked per pixel), and the tick.
+
 ## Visuals
 
 - Each pixel colored by ring position mapped around the hue wheel, so the

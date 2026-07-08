@@ -26,8 +26,12 @@ A single-file [p5.js](https://p5js.org/) sketch. No build step — open
 - **Shapes** — draw a circle, spiral, or lattice as one chain and set it
   loose; the pixels slider controls its density.
 - **Draw your own** — pause, drag a shape onto the grid, resume.
-- **Share** — the URL hash tracks every setting; the share button copies a
-  link that reproduces your setup.
+- **Share** — the URL hash tracks every setting *and the run seed*; the
+  share button copies a link that replays your exact run, capture for
+  capture.
+- **Go 3D** — run the same rules on the surface of a cube, sphere, gem, or
+  torus (the torus is literally the flat wrap-mode grid, finally visible as
+  the donut it always was). Drag to orbit.
 
 ## Parameters
 
