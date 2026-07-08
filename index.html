@@ -96,6 +96,7 @@
     <label>corpses block <input id="in-corpses" type="checkbox"></label>
     <label>shuffled order <input id="in-shuffled" type="checkbox" checked></label>
     <label>inherit prey <input id="in-inherit" type="checkbox" checked></label>
+    <label>ring rivalry <input id="in-rivalry" type="checkbox"></label>
     <label>moves
       <select id="in-moves">
         <option value="all" selected>all 8</option>
@@ -139,6 +140,7 @@ const settings = {
   shuffled: true,     // shuffled turn order vs fixed ring order
   aggressivePct: 50,  // % of pixels playing the aggressive strategy
   inherit: true,      // catcher inherits its victim's prey (ring never breaks)
+  rivalry: false,     // with >1 rings: ring r can trample any pixel of ring r+1 (spatial RPS)
   jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
   moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
   vision: 42,         // sight radius in cells; 42 means unlimited
@@ -154,6 +156,7 @@ let px = [];                  // {x, y, hue, alive}
 let occ = new Map();          // "x,y" -> index of living pixel
 let corpseCells = new Set();  // "x,y"
 let wallCells = new Set();    // "x,y" — user-painted terrain; survives restart, cleared by clear
+let ringCount = 1;            // number of rings in the current run (for rivalry)
 let tick = 0, captures = 0, starved = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
@@ -420,7 +423,9 @@ function stepPixel(i) {
     if (corpseCells.has(k) || wallCells.has(k)) continue;
     const isPreyCell = chasing && nx === prey.x && ny === prey.y;
     const occupant = occ.get(k);
-    if (occupant !== undefined && occupant !== i && !isPreyCell) continue;
+    const isRival = occupant !== undefined && occupant !== i && settings.rivalry
+      && ringCount > 1 && px[occupant].ring === ((p.ring || 0) + 1) % ringCount;
+    if (occupant !== undefined && occupant !== i && !isPreyCell && !isRival) continue;
     cands.push({ x: nx, y: ny });
 
     // Inactive criteria contribute a constant 0, which never affects ordering.
@@ -463,6 +468,26 @@ function stepPixel(i) {
       corpseCells.add(cellKey(prey.x, prey.y));
       if (ontoPrey) return; // corpse keeps the cell; catcher stays put
     }
+  } else {
+    // rivalry: landing on a next-ring pixel tramples it; its ring closes around it
+    const vIdx = occ.get(cellKey(m.x, m.y));
+    if (vIdx !== undefined && vIdx !== i) {
+      const v = px[vIdx];
+      v.alive = false;
+      occ.delete(cellKey(v.x, v.y));
+      captures++;
+      p.kills = (p.kills || 0) + 1;
+      p.hunger = 0;
+      ping(v.hue, false);
+      if (settings.inherit && px[v.hunter].alive) {
+        px[v.hunter].prey = v.prey;
+        px[v.prey].hunter = v.hunter;
+      }
+      if (settings.corpses) {
+        corpseCells.add(cellKey(v.x, v.y));
+        return; // corpse keeps the cell; the trampler stays put
+      }
+    }
   }
   occ.delete(cellKey(p.x, p.y));
   p.x = m.x; p.y = m.y;
@@ -495,7 +520,9 @@ function stepPixel3D(i) {
     if (corpseCells.has(nc)) continue;
     const isPreyCell = chasing && nc === prey.cell;
     const occupant = occ.get(nc);
-    if (occupant !== undefined && occupant !== i && !isPreyCell) continue;
+    const isRival = occupant !== undefined && occupant !== i && settings.rivalry
+      && ringCount > 1 && px[occupant].ring === ((p.ring || 0) + 1) % ringCount;
+    if (occupant !== undefined && occupant !== i && !isPreyCell && !isRival) continue;
     cands.push(nc);
     const dPrey = chasing ? dist3(nc, prey.cell) : 0;
     const dHunt = fleeing ? -dist3(nc, hunter.cell) : 0;
@@ -530,6 +557,26 @@ function stepPixel3D(i) {
     if (settings.corpses) {
       corpseCells.add(prey.cell);
       if (ontoPrey) return;
+    }
+  } else {
+    // rivalry: landing on a next-ring pixel tramples it; its ring closes around it
+    const vIdx = occ.get(m);
+    if (vIdx !== undefined && vIdx !== i) {
+      const v = px[vIdx];
+      v.alive = false;
+      occ.delete(v.cell);
+      captures++;
+      p.kills = (p.kills || 0) + 1;
+      p.hunger = 0;
+      ping(v.hue, false);
+      if (settings.inherit && px[v.hunter].alive) {
+        px[v.hunter].prey = v.prey;
+        px[v.prey].hunter = v.hunter;
+      }
+      if (settings.corpses) {
+        corpseCells.add(v.cell);
+        return;
+      }
     }
   }
   if (settings.trails) {
@@ -647,6 +694,7 @@ function seedSim() {
   // link K independent rings over consecutive index ranges, each with its
   // own hue family (a single ring keeps the full rainbow)
   const K = Math.max(1, Math.min(settings.rings, N));
+  ringCount = K;
   let start = 0;
   for (let r = 0; r < K; r++) {
     const size = Math.floor(N / K) + (r < N % K ? 1 : 0);
@@ -656,6 +704,7 @@ function seedSim() {
       p.prey = start + (j + 1) % size;
       p.hunter = start + (j - 1 + size) % size;
       p.hue = ((r * 360) / K + (j / size) * span) % 360;
+      p.ring = r;
     }
     start += size;
   }
@@ -695,6 +744,7 @@ function addPixel(cx, cy) {
   px.push({
     x: cx, y: cy, hue: (i * 137.508) % 360, alive: true, temper: random(1),
     prey: i, hunter: i, hunger: 0,
+    ring: (chainHead !== null && px[chainHead]) ? (px[chainHead].ring || 0) : 0,
   });
   occ.set(cellKey(cx, cy), i);
   spliceIn(i);
@@ -1005,6 +1055,7 @@ function bindCheck(id, field) {
 bindCheck('in-wrap', 'wrap');
 bindCheck('in-shuffled', 'shuffled');
 bindCheck('in-inherit', 'inherit');
+bindCheck('in-rivalry', 'rivalry');
 
 // corpses toggle applies retroactively: ON solidifies every existing body,
 // OFF releases them all back to walkable ghosts
@@ -1090,7 +1141,7 @@ function stateToHash() {
     'w=' + (+s.wrap), 'c=' + (+s.corpses), 'o=' + (+s.shuffled), 'i=' + (+s.inherit),
     'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
-    'sf=' + s.surface, 'snd=' + (+s.sound),
+    'sf=' + s.surface, 'snd=' + (+s.sound), 'rv=' + (+s.rivalry),
   ];
   if (runSeed !== null) parts.push('sd=' + runSeed);
   if (lastShape) parts.push('shape=' + lastShape);
@@ -1115,7 +1166,7 @@ function applyHash() {
   num('sp', 'speed', 1, 60); num('a', 'aggressivePct', 0, 100); num('j', 'jitter', 0, 100);
   num('v', 'vision', 2, 42); num('st', 'starve', 0, 400);
   bool('w', 'wrap'); bool('c', 'corpses'); bool('o', 'shuffled'); bool('i', 'inherit');
-  bool('t', 'trails'); bool('l', 'chaseLines'); bool('snd', 'sound');
+  bool('t', 'trails'); bool('l', 'chaseLines'); bool('snd', 'sound'); bool('rv', 'rivalry');
   if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
@@ -1145,6 +1196,7 @@ function syncUI() {
   check('in-corpses', settings.corpses);
   check('in-shuffled', settings.shuffled);
   check('in-inherit', settings.inherit);
+  check('in-rivalry', settings.rivalry);
   set('in-moves', settings.moves);
   set('in-speedmode', settings.speedMode);
   set('in-strategy', settings.aggressivePct);
