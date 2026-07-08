@@ -437,7 +437,21 @@ function drawShape(name) {
       flip = !flip;
     }
   }
-  for (const [fx, fy] of pts) tryAddCell(Math.round(fx), Math.round(fy));
+  // dedupe the path into ordered unique cells, then sample it down to the
+  // pixels slider: 10 on a circle is a decagon of distant chasers, 500 is
+  // the solid ring (capped at the path length)
+  const seen = new Set(), cells = [];
+  for (const [fx, fy] of pts) {
+    const cx = Math.round(fx), cy = Math.round(fy);
+    const k = cellKey(cx, cy);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    cells.push([cx, cy]);
+  }
+  const want = Math.min(Number(document.getElementById('in-count').value), cells.length);
+  for (let j = 0; j < want; j++) {
+    tryAddCell(...cells[Math.floor((j * cells.length) / want)]);
+  }
   // smooth rainbow along the path so the chase direction is visible
   px.forEach((p, j) => { p.hue = (j / px.length) * 360; });
 }

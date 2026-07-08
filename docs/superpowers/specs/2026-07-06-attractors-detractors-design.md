@@ -161,8 +161,10 @@ Two selects compose like the manual workflow (recipe first, then shape):
   user-controlled.
 - *Shape* clears the grid, pauses, and draws a preset shape (circle, square,
   spiral, line, lattice) as one chain in path order with a smooth rainbow
-  along the path. Tweak parameters, then resume. The select snaps back to
-  "—" after drawing so the same shape can be re-picked.
+  along the path. The pixels slider sets the sampling density along the
+  path — 10 on a circle is a decagon of distant chasers, 500 the solid ring
+  (capped at the path length). Tweak parameters, then resume. The select
+  snaps back to "—" after drawing so the same shape can be re-picked.
 
 ## Click to add / clear
 
