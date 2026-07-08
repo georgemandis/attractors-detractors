@@ -118,6 +118,7 @@
       <input id="in-starve" type="range" min="0" max="400" step="20" value="0"></label>
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
+    <label>sound <input id="in-sound" type="checkbox"></label>
   </fieldset>
 </aside>
 <script>
@@ -139,6 +140,7 @@ const settings = {
   starve: 0,          // ticks a chaser may go without a kill before dying; 0 = off
   trails: true,
   chaseLines: false,
+  sound: false,       // capture/starvation sonification (WebAudio)
 };
 
 let px = [];                  // {x, y, hue, alive}
@@ -335,6 +337,44 @@ function dist3(ca, cb) { return surf.dist(ca, cb); }
 // occupancy/corpse key for a pixel in either mode
 function pixelKey(p) { return mode3D() ? p.cell : cellKey(p.x, p.y); }
 
+// ---- sonification: captures ping pentatonic notes by hue, starvation rumbles ----
+let audioCtx = null, masterGain = null, voicesThisTick = 0;
+const PENTA = [0, 3, 5, 7, 10];
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.22;
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function ping(hue, dark) {
+  if (!settings.sound || !audioCtx || voicesThisTick >= 8) return;
+  voicesThisTick++;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  let f;
+  if (dark) {
+    f = 62 + (hue / 360) * 34;
+  } else {
+    const idx = Math.floor((hue / 360) * 10);
+    f = 330 * Math.pow(2, (PENTA[idx % 5] + 12 * Math.floor(idx / 5)) / 12);
+  }
+  o.type = dark ? 'triangle' : 'sine';
+  o.frequency.value = f;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (dark ? 0.5 : 0.22));
+  o.connect(g);
+  g.connect(masterGain);
+  o.start(t);
+  o.stop(t + 0.6);
+}
+
 function dist2(x1, y1, x2, y2) {
   const G = settings.gridSize;
   let dx = Math.abs(x1 - x2), dy = Math.abs(y1 - y2);
@@ -404,6 +444,7 @@ function stepPixel(i) {
     captures++;
     p.kills = (p.kills || 0) + 1;
     p.hunger = 0; // a kill resets the starvation clock
+    ping(prey.hue, false);
     if (settings.inherit) {
       // catcher inherits the victim's prey; that prey now fears the catcher.
       // With two left this self-links the survivor, which reads as "no prey".
@@ -473,6 +514,7 @@ function stepPixel3D(i) {
     captures++;
     p.kills = (p.kills || 0) + 1;
     p.hunger = 0;
+    ping(prey.hue, false);
     if (settings.inherit) {
       p.prey = prey.prey;
       px[p.prey].hunter = i;
@@ -500,6 +542,7 @@ function isSettled() {
 }
 
 function runTick() {
+  voicesThisTick = 0;
   const order = [];
   for (let i = 0; i < px.length; i++) {
     if (!px[i].alive) continue;
@@ -539,6 +582,7 @@ function starveOut(i) {
   p.alive = false;
   occ.delete(pixelKey(p));
   starved++;
+  ping(p.hue, true);
   if (settings.inherit && px[p.hunter].alive) {
     // close the ring around the starved pixel
     px[p.hunter].prey = p.prey;
@@ -943,6 +987,11 @@ document.getElementById('in-corpses').addEventListener('input', e => {
 bindCheck('in-trails', 'trails');
 bindCheck('in-lines', 'chaseLines');
 
+document.getElementById('in-sound').addEventListener('input', e => {
+  settings.sound = e.target.checked;
+  if (settings.sound) ensureAudio(); // the click doubles as the audio-unlock gesture
+});
+
 bindRange('in-strategy', 'val-strategy', v => { settings.aggressivePct = v; });
 bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; });
 
@@ -1006,7 +1055,7 @@ function stateToHash() {
     'w=' + (+s.wrap), 'c=' + (+s.corpses), 'o=' + (+s.shuffled), 'i=' + (+s.inherit),
     'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
-    'sf=' + s.surface,
+    'sf=' + s.surface, 'snd=' + (+s.sound),
   ];
   if (runSeed !== null) parts.push('sd=' + runSeed);
   if (lastShape) parts.push('shape=' + lastShape);
@@ -1031,7 +1080,7 @@ function applyHash() {
   num('sp', 'speed', 1, 60); num('a', 'aggressivePct', 0, 100); num('j', 'jitter', 0, 100);
   num('v', 'vision', 2, 42); num('st', 'starve', 0, 400);
   bool('w', 'wrap'); bool('c', 'corpses'); bool('o', 'shuffled'); bool('i', 'inherit');
-  bool('t', 'trails'); bool('l', 'chaseLines');
+  bool('t', 'trails'); bool('l', 'chaseLines'); bool('snd', 'sound');
   if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
@@ -1056,6 +1105,7 @@ function syncUI() {
   document.getElementById('val-speed').textContent = settings.speed;
   check('in-trails', settings.trails);
   check('in-lines', settings.chaseLines);
+  check('in-sound', settings.sound);
   check('in-wrap', settings.wrap);
   check('in-corpses', settings.corpses);
   check('in-shuffled', settings.shuffled);
