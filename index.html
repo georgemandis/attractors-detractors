@@ -410,12 +410,45 @@ function dist2(x1, y1, x2, y2) {
   return dx * dx + dy * dy;
 }
 
+// nearest living member of ring r, by the active surface metric
+function nearestOfRing(i, r) {
+  const p = px[i];
+  let best = -1, bd = Infinity;
+  for (let j = 0; j < px.length; j++) {
+    if (j === i) continue;
+    const q = px[j];
+    if (!q.alive || (q.ring || 0) !== r) continue;
+    const d = mode3D() ? dist3(p.cell, q.cell) : dist2(p.x, p.y, q.x, q.y);
+    if (d < bd) { bd = d; best = j; }
+  }
+  return best;
+}
+
+// with rivalry on, a pixel whose chain is done turns on the neighbors:
+// hunt the nearest member of the next ring, fear the nearest of the previous
+function resolveTargets(i) {
+  const p = px[i];
+  let preyIdx = p.prey, hunterIdx = p.hunter;
+  if (settings.rivalry && ringCount > 1) {
+    if (preyIdx === i || !px[preyIdx].alive) {
+      const t = nearestOfRing(i, ((p.ring || 0) + 1) % ringCount);
+      if (t !== -1) preyIdx = t;
+    }
+    if (hunterIdx === i || !px[hunterIdx].alive) {
+      const t = nearestOfRing(i, ((p.ring || 0) - 1 + ringCount) % ringCount);
+      if (t !== -1) hunterIdx = t;
+    }
+  }
+  return [preyIdx, hunterIdx];
+}
+
 function stepPixel(i) {
   const p = px[i];
-  const prey = px[p.prey], hunter = px[p.hunter];
+  const [preyIdx, hunterIdx] = resolveTargets(i);
+  const prey = px[preyIdx], hunter = px[hunterIdx];
   const vr = settings.vision >= 42 ? Infinity : settings.vision * settings.vision;
-  const preyAlive = p.prey !== i && prey.alive;
-  const huntAlive = p.hunter !== i && hunter.alive;
+  const preyAlive = preyIdx !== i && prey.alive;
+  const huntAlive = hunterIdx !== i && hunter.alive;
   const chasing = preyAlive && dist2(p.x, p.y, prey.x, prey.y) <= vr;
   const fleeing = huntAlive && dist2(p.x, p.y, hunter.x, hunter.y) <= vr;
   // a pixel whose living targets are all out of sight wanders in search of them
@@ -462,8 +495,11 @@ function stepPixel(i) {
     : best[Math.floor(random(best.length))];
   if (m.x === p.x && m.y === p.y) return;
 
-  const ontoPrey = chasing && m.x === prey.x && m.y === prey.y;
-  const adjCapture = chasing && !ontoPrey && settings.moves === 'diagonal'
+  // chain-capture semantics (inherit) apply only to the true chain prey;
+  // landing on a sought rival falls through to the trample branch below
+  const isChainPrey = preyIdx === p.prey;
+  const ontoPrey = chasing && isChainPrey && m.x === prey.x && m.y === prey.y;
+  const adjCapture = chasing && isChainPrey && !ontoPrey && settings.moves === 'diagonal'
     && dist2(m.x, m.y, prey.x, prey.y) === 1;
   if (ontoPrey || adjCapture) {
     prey.alive = false;
@@ -515,11 +551,12 @@ function stepPixel(i) {
 // of coordinates, projected 3D distance instead of torus distance.
 function stepPixel3D(i) {
   const p = px[i];
-  const prey = px[p.prey], hunter = px[p.hunter];
+  const [preyIdx, hunterIdx] = resolveTargets(i);
+  const prey = px[preyIdx], hunter = px[hunterIdx];
   const step = 2 / surf.G;
   const vr = settings.vision >= 42 ? Infinity : (settings.vision * step) ** 2;
-  const preyAlive = p.prey !== i && prey.alive;
-  const huntAlive = p.hunter !== i && hunter.alive;
+  const preyAlive = preyIdx !== i && prey.alive;
+  const huntAlive = hunterIdx !== i && hunter.alive;
   const chasing = preyAlive && dist3(p.cell, prey.cell) <= vr;
   const fleeing = huntAlive && dist3(p.cell, hunter.cell) <= vr;
   const wandering = !chasing && !fleeing && (preyAlive || huntAlive);
@@ -557,8 +594,9 @@ function stepPixel3D(i) {
     : best[Math.floor(random(best.length))];
   if (m === p.cell) return;
 
-  const ontoPrey = chasing && m === prey.cell;
-  const adjCapture = chasing && !ontoPrey && settings.moves === 'diagonal'
+  const isChainPrey = preyIdx === p.prey;
+  const ontoPrey = chasing && isChainPrey && m === prey.cell;
+  const adjCapture = chasing && isChainPrey && !ontoPrey && settings.moves === 'diagonal'
     && surf.orth[m].includes(prey.cell);
   if (ontoPrey || adjCapture) {
     prey.alive = false;
@@ -612,6 +650,15 @@ function isSettled() {
   for (let i = 0; i < px.length; i++) {
     const p = px[i];
     if (p.alive && p.prey !== i && px[p.prey].alive) return false;
+  }
+  // rivalry keeps the sim alive while any ring still has living neighbors
+  // in the next ring to hunt
+  if (settings.rivalry && ringCount > 1) {
+    const living = new Array(ringCount).fill(0);
+    for (const p of px) if (p.alive) living[Math.min(p.ring || 0, ringCount - 1)]++;
+    for (let r = 0; r < ringCount; r++) {
+      if (living[r] > 0 && living[(r + 1) % ringCount] > 0) return false;
+    }
   }
   return true;
 }

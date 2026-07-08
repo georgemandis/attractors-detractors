@@ -155,9 +155,17 @@ replay, which is accepted.
   restarts, and are cleared by the clear button. Flat mode only; not in the
   share hash.
 - **Ring rivalry** (toggle): with K>1 rings, any pixel may trample any
-  pixel of ring (r+1) mod K by landing on it — opportunistic (movement is
-  still chain-driven). The victim's own ring closes around it; normal
-  corpse rules apply. Spatial rock-paper-scissors.
+  pixel of ring (r+1) mod K by landing on it. The victim's own ring closes
+  around it; normal corpse rules apply. Spatial rock-paper-scissors.
+  While a pixel's own chain lives, movement stays chain-driven and rival
+  kills are opportunistic; once its chain is done (no living chain prey or
+  hunter), it turns on the neighbors — hunting the nearest member of the
+  next ring and fearing the nearest of the previous (chain-capture
+  inheritance never crosses rings; rival kills always splice the victim's
+  own ring). Settling accounts for remaining cross-ring hunts, so a
+  rivalry endgame runs until surviving rings form an independent set of
+  the predation cycle (e.g., 7 rings can end with survivors in rings
+  1/3/5 but never in two consecutive rings).
 - **Click to follow**: clicking a living pixel (pixels brush) highlights it
   with a white ring, a green line to its prey and red to its hunter, plus a
   bio line (temperament, kills, hunger). Click again to unfollow.
