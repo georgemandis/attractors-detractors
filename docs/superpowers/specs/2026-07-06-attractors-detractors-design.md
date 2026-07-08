@@ -236,11 +236,15 @@ Two selects compose like the manual workflow (recipe first, then shape):
   leftovers from play never leak in; count/grid/speed/trails/lines stay
   user-controlled.
 - *Shape* clears the grid, pauses, and draws a preset shape (circle, square,
-  spiral, line, lattice) as one chain in path order with a smooth rainbow
-  along the path. The pixels slider sets the sampling density along the
-  path — 10 on a circle is a decagon of distant chasers, 500 the solid ring
-  (capped at the path length). Tweak parameters, then resume. The select
+  spiral, line, lattice) in path order. The pixels slider sets the sampling
+  density along the path — 10 on a circle is a decagon of distant chasers,
+  500 the solid ring (capped at the path length). The rings slider
+  interleaves the path into K strands braided around the same shape, each
+  chasing within itself and colored by its own hue family (K=1: one chain,
+  full rainbow along the path). Tweak parameters, then resume. The select
   snaps back to "—" after drawing so the same shape can be re-picked.
+  Following a pixel (click) dims every other ring, so a single strand can
+  be traced by eye — in 2D and 3D.
 
 ## Shareable state
 

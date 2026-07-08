@@ -923,11 +923,32 @@ function drawShape(name) {
     cells.push([cx, cy]);
   }
   const want = Math.min(settings.count, cells.length);
+  const chosen = [];
+  for (let j = 0; j < want; j++) chosen.push(cells[Math.floor((j * cells.length) / want)]);
+  // the rings slider interleaves the path into K strands braided around the
+  // same shape, each chasing within itself (K=1: one chain, full rainbow)
+  const K = Math.max(1, Math.min(settings.rings, want));
+  ringCount = K;
   for (let j = 0; j < want; j++) {
-    tryAddCell(...cells[Math.floor((j * cells.length) / want)]);
+    const [cx, cy] = chosen[j];
+    px.push({
+      x: cx, y: cy, hue: 0, alive: true, temper: random(1),
+      prey: j, hunter: j, hunger: 0, kills: 0, ring: j % K,
+    });
+    occ.set(cellKey(cx, cy), j);
   }
-  // smooth rainbow along the path so the chase direction is visible
-  px.forEach((p, j) => { p.hue = (j / px.length) * 360; });
+  const span = K === 1 ? 360 : Math.min(60, (360 / K) * 0.6);
+  for (let r = 0; r < K; r++) {
+    const members = [];
+    for (let j = r; j < want; j += K) members.push(j);
+    members.forEach((idx, mi) => {
+      px[idx].prey = members[(mi + 1) % members.length];
+      px[idx].hunter = members[(mi - 1 + members.length) % members.length];
+      px[idx].hue = ((r * 360) / K + (mi / members.length) * span) % 360;
+    });
+  }
+  chainHead = want > 0 ? 0 : null;
+  settled = isSettled();
 }
 
 function mouseDragged() {
@@ -967,9 +988,11 @@ function render() {
     fill(0, 0, corpseCells.has(cellKey(p.x, p.y)) ? 40 : 18);
     rect(p.x * cs, p.y * cs, cs, cs);
   }
+  // following a pixel dims every other ring so its own ring pops out
+  const focusRing = focusIdx !== null && px[focusIdx] ? (px[focusIdx].ring || 0) : null;
   for (const p of px) {
     if (!p.alive) continue;
-    fill(p.hue, 80, 100);
+    fill(p.hue, 80, focusRing !== null && (p.ring || 0) !== focusRing ? 28 : 100);
     rect(p.x * cs, p.y * cs, cs, cs);
   }
   colorMode(RGB, 255, 255, 255, 255);
@@ -1137,7 +1160,8 @@ function render3D() {
         push(); translate(q[0] * R, q[1] * R, q[2] * R); box(cellPx * 0.55); pop();
       }
     }
-    fill(p.hue, 80, 100);
+    const focusRing3 = focusIdx !== null && px[focusIdx] ? (px[focusIdx].ring || 0) : null;
+    fill(p.hue, 80, focusRing3 !== null && (p.ring || 0) !== focusRing3 ? 28 : 100);
     const q = surf.proj[p.cell];
     push(); translate(q[0] * R, q[1] * R, q[2] * R); box(cellPx); pop();
   }
