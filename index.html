@@ -119,6 +119,12 @@
     <label>trails <input id="in-trails" type="checkbox" checked></label>
     <label>chase lines <input id="in-lines" type="checkbox"></label>
     <label>sound <input id="in-sound" type="checkbox"></label>
+    <label>brush
+      <select id="in-brush">
+        <option value="pixels" selected>pixels</option>
+        <option value="walls">walls</option>
+        <option value="erase">erase walls</option>
+      </select></label>
   </fieldset>
 </aside>
 <script>
@@ -141,11 +147,13 @@ const settings = {
   trails: true,
   chaseLines: false,
   sound: false,       // capture/starvation sonification (WebAudio)
+  brush: 'pixels',    // what clicking paints: pixels | walls | erase (walls)
 };
 
 let px = [];                  // {x, y, hue, alive}
 let occ = new Map();          // "x,y" -> index of living pixel
 let corpseCells = new Set();  // "x,y"
+let wallCells = new Set();    // "x,y" — user-painted terrain; survives restart, cleared by clear
 let tick = 0, captures = 0, starved = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
@@ -409,7 +417,7 @@ function stepPixel(i) {
       continue;
     }
     const k = cellKey(nx, ny);
-    if (corpseCells.has(k)) continue;
+    if (corpseCells.has(k) || wallCells.has(k)) continue;
     const isPreyCell = chasing && nx === prey.x && ny === prey.y;
     const occupant = occ.get(k);
     if (occupant !== undefined && occupant !== i && !isPreyCell) continue;
@@ -620,8 +628,10 @@ function seedSim() {
     }
   } else {
     const cells = new Set();
-    while (cells.size < N) {
-      cells.add(cellKey(Math.floor(random(G)), Math.floor(random(G))));
+    let tries = 0;
+    while (cells.size < N && tries++ < N * 400) {
+      const k = cellKey(Math.floor(random(G)), Math.floor(random(G)));
+      if (!wallCells.has(k)) cells.add(k);
     }
     let i = 0;
     for (const k of cells) {
@@ -659,6 +669,7 @@ function clearSim() {
   tick = 0; captures = 0; starved = 0; settled = true; acc = 0; chainHead = null;
   lastShape = null;
   hist = []; popMax = 1;
+  wallCells = new Set();
   background(11, 11, 14);
 }
 
@@ -694,8 +705,22 @@ function tryAddCell(cx, cy) {
   const G = settings.gridSize;
   if (cx < 0 || cy < 0 || cx >= G || cy >= G) return;
   const k = cellKey(cx, cy);
-  if (occ.has(k) || corpseCells.has(k)) return; // ghosts are fine to build on
+  if (occ.has(k) || corpseCells.has(k) || wallCells.has(k)) return; // ghosts are fine to build on
   addPixel(cx, cy);
+}
+
+// clicking/dragging routes through the active brush
+function paintCell(cx, cy) {
+  const G = settings.gridSize;
+  if (cx < 0 || cy < 0 || cx >= G || cy >= G) return;
+  const k = cellKey(cx, cy);
+  if (settings.brush === 'walls') {
+    if (!occ.has(k)) wallCells.add(k); // never wall over a living pixel
+  } else if (settings.brush === 'erase') {
+    wallCells.delete(k);
+  } else {
+    tryAddCell(cx, cy);
+  }
 }
 
 function cellAt(mx, my) {
@@ -706,7 +731,7 @@ function cellAt(mx, my) {
 function mousePressed() {
   if (mode3D()) return; // the mouse orbits the camera in 3D
   if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
-  tryAddCell(...cellAt(mouseX, mouseY));
+  paintCell(...cellAt(mouseX, mouseY));
 }
 
 // Every recipe spells out the full parameter set so leftovers from play
@@ -791,7 +816,7 @@ function mouseDragged() {
   const [x2, y2] = cellAt(mouseX, mouseY);
   const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
   for (let s = 1; s <= steps; s++) {
-    tryAddCell(Math.round(x1 + ((x2 - x1) * s) / steps), Math.round(y1 + ((y2 - y1) * s) / steps));
+    paintCell(Math.round(x1 + ((x2 - x1) * s) / steps), Math.round(y1 + ((y2 - y1) * s) / steps));
   }
 }
 
@@ -806,6 +831,12 @@ function render() {
   const cs = width / settings.gridSize;
   noStroke();
   colorMode(HSB, 360, 100, 100, 1);
+  // user-painted walls: steel-blue terrain
+  fill(215, 35, 34);
+  for (const k of wallCells) {
+    const [x, y] = k.split(',').map(Number);
+    rect(x * cs, y * cs, cs, cs);
+  }
   // dead pixels stay visible at their death spot: faint ghosts when
   // walkable, solid gray when they block (i.e. they're in corpseCells)
   for (const p of px) {
@@ -986,6 +1017,10 @@ document.getElementById('in-corpses').addEventListener('input', e => {
 });
 bindCheck('in-trails', 'trails');
 bindCheck('in-lines', 'chaseLines');
+
+document.getElementById('in-brush').addEventListener('input', e => {
+  settings.brush = e.target.value;
+});
 
 document.getElementById('in-sound').addEventListener('input', e => {
   settings.sound = e.target.checked;
