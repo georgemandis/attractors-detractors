@@ -99,6 +99,7 @@
     <label>shuffled order <input id="in-shuffled" type="checkbox" checked></label>
     <label>inherit prey <input id="in-inherit" type="checkbox" checked></label>
     <label>ring rivalry <input id="in-rivalry" type="checkbox"></label>
+    <label>evolve <input id="in-evolve" type="checkbox"></label>
     <label>moves
       <select id="in-moves">
         <option value="all" selected>all 8</option>
@@ -143,6 +144,7 @@ const settings = {
   aggressivePct: 50,  // % of pixels playing the aggressive strategy
   inherit: true,      // catcher inherits its victim's prey (ring never breaks)
   rivalry: false,     // with >1 rings: ring r can trample any pixel of ring r+1 (spatial RPS)
+  evolve: false,      // every death spawns a mutated child of a random survivor
   jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
   moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
   vision: 42,         // sight radius in cells; 42 means unlimited
@@ -160,7 +162,7 @@ let corpseCells = new Set();  // "x,y"
 let wallCells = new Set();    // "x,y" — user-painted terrain; survives restart, cleared by clear
 let ringCount = 1;            // number of rings in the current run (for rivalry)
 let focusIdx = null;          // pixel selected by clicking it — highlighted with its prey/hunter
-let tick = 0, captures = 0, starved = 0;
+let tick = 0, captures = 0, starved = 0, births = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
 let chainHead = null;         // whom the next click-added pixel will chase
@@ -469,8 +471,9 @@ function stepPixel(i) {
     }
     if (settings.corpses) {
       corpseCells.add(cellKey(prey.x, prey.y));
-      if (ontoPrey) return; // corpse keeps the cell; catcher stays put
+      if (ontoPrey) { respawn(); return; } // corpse keeps the cell; catcher stays put
     }
+    respawn();
   } else {
     // rivalry: landing on a next-ring pixel tramples it; its ring closes around it
     const vIdx = occ.get(cellKey(m.x, m.y));
@@ -488,8 +491,10 @@ function stepPixel(i) {
       }
       if (settings.corpses) {
         corpseCells.add(cellKey(v.x, v.y));
+        respawn();
         return; // corpse keeps the cell; the trampler stays put
       }
+      respawn();
     }
   }
   occ.delete(cellKey(p.x, p.y));
@@ -559,8 +564,9 @@ function stepPixel3D(i) {
     }
     if (settings.corpses) {
       corpseCells.add(prey.cell);
-      if (ontoPrey) return;
+      if (ontoPrey) { respawn(); return; }
     }
+    respawn();
   } else {
     // rivalry: landing on a next-ring pixel tramples it; its ring closes around it
     const vIdx = occ.get(m);
@@ -578,8 +584,10 @@ function stepPixel3D(i) {
       }
       if (settings.corpses) {
         corpseCells.add(v.cell);
+        respawn();
         return;
       }
+      respawn();
     }
   }
   if (settings.trails) {
@@ -635,6 +643,45 @@ function runTick() {
   if (hist.length > 4096) hist = hist.filter((_, j) => j % 2 === 0);
 }
 
+// Evolution: a death spawns a child of a random survivor at a random empty
+// cell, spliced in right behind its parent. Temperament mutates a little;
+// hue drifts a little, so lineages become visible color families.
+function respawn() {
+  if (!settings.evolve) return;
+  const living = [];
+  for (let j = 0; j < px.length; j++) if (px[j].alive) living.push(j);
+  if (living.length === 0) return;
+  const pi = living[Math.floor(random(living.length))];
+  const parent = px[pi];
+  const child = {
+    hue: (parent.hue + random(-12, 12) + 360) % 360,
+    alive: true,
+    temper: Math.min(0.999, Math.max(0, parent.temper + (random(1) - 0.5) * 0.2)),
+    prey: parent.prey, hunter: pi, hunger: 0, kills: 0, ring: parent.ring || 0,
+  };
+  let tries = 0;
+  if (mode3D()) {
+    let cell;
+    do { cell = Math.floor(random(surf.N)); }
+    while ((occ.has(cell) || corpseCells.has(cell)) && ++tries < 400);
+    if (tries >= 400) return;
+    child.cell = cell;
+  } else {
+    const G = settings.gridSize;
+    let cx, cy, k;
+    do { cx = Math.floor(random(G)); cy = Math.floor(random(G)); k = cellKey(cx, cy); }
+    while ((occ.has(k) || corpseCells.has(k) || wallCells.has(k)) && ++tries < 400);
+    if (tries >= 400) return;
+    child.x = cx; child.y = cy;
+  }
+  const i = px.length;
+  px.push(child);
+  occ.set(pixelKey(child), i);
+  px[parent.prey].hunter = i;
+  parent.prey = i;
+  births++;
+}
+
 function starveOut(i) {
   const p = px[i];
   p.alive = false;
@@ -647,12 +694,13 @@ function starveOut(i) {
     px[p.prey].hunter = p.hunter;
   }
   if (settings.corpses) corpseCells.add(pixelKey(p));
+  respawn();
 }
 
 function seedSim() {
   const N = settings.count, G = settings.gridSize;
   px = []; occ = new Map(); corpseCells = new Set();
-  tick = 0; captures = 0; starved = 0; settled = false; acc = 0;
+  tick = 0; captures = 0; starved = 0; births = 0; settled = false; acc = 0;
   hist = []; popMax = Math.max(1, N);
   focusIdx = null;
   // every run is seeded so a share link can replay it exactly; restart
@@ -719,7 +767,7 @@ function seedSim() {
 
 function clearSim() {
   px = []; occ = new Map(); corpseCells = new Set();
-  tick = 0; captures = 0; starved = 0; settled = true; acc = 0; chainHead = null;
+  tick = 0; captures = 0; starved = 0; births = 0; settled = true; acc = 0; chainHead = null;
   lastShape = null;
   hist = []; popMax = 1;
   wallCells = new Set();
@@ -952,6 +1000,7 @@ function updateStats() {
   const alive = aliveCount();
   statsEl.innerHTML = 'tick ' + tick + ' · alive ' + alive + ' · captures ' + captures
     + (starved > 0 ? ' · starved ' + starved : '')
+    + (births > 0 ? ' · born ' + births : '')
     + (settled && alive > 0 ? ' · <span class="settled">settled</span>' : '');
   // sparkline: population over time (green alive, red captures, yellow starved)
   const sc = sparkEl.getContext('2d');
@@ -1102,6 +1151,7 @@ bindCheck('in-wrap', 'wrap');
 bindCheck('in-shuffled', 'shuffled');
 bindCheck('in-inherit', 'inherit');
 bindCheck('in-rivalry', 'rivalry');
+bindCheck('in-evolve', 'evolve');
 
 // corpses toggle applies retroactively: ON solidifies every existing body,
 // OFF releases them all back to walkable ghosts
@@ -1187,7 +1237,7 @@ function stateToHash() {
     'w=' + (+s.wrap), 'c=' + (+s.corpses), 'o=' + (+s.shuffled), 'i=' + (+s.inherit),
     'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
-    'sf=' + s.surface, 'snd=' + (+s.sound), 'rv=' + (+s.rivalry),
+    'sf=' + s.surface, 'snd=' + (+s.sound), 'rv=' + (+s.rivalry), 'e=' + (+s.evolve),
   ];
   if (runSeed !== null) parts.push('sd=' + runSeed);
   if (lastShape) parts.push('shape=' + lastShape);
@@ -1213,6 +1263,7 @@ function applyHash() {
   num('v', 'vision', 2, 42); num('st', 'starve', 0, 400);
   bool('w', 'wrap'); bool('c', 'corpses'); bool('o', 'shuffled'); bool('i', 'inherit');
   bool('t', 'trails'); bool('l', 'chaseLines'); bool('snd', 'sound'); bool('rv', 'rivalry');
+  bool('e', 'evolve');
   if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
@@ -1243,6 +1294,7 @@ function syncUI() {
   check('in-shuffled', settings.shuffled);
   check('in-inherit', settings.inherit);
   check('in-rivalry', settings.rivalry);
+  check('in-evolve', settings.evolve);
   set('in-moves', settings.moves);
   set('in-speedmode', settings.speedMode);
   set('in-strategy', settings.aggressivePct);
