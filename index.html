@@ -43,7 +43,7 @@
     <button id="btn-clear">clear</button>
     <button id="btn-share">share</button>
   </div>
-  <div id="hint">click or drag on empty cells to add pixels to the chain — pause first to draw clean shapes</div>
+  <div id="hint">click or drag on empty cells to add pixels to the chain — pause first to draw clean shapes. on 3D surfaces, drag to orbit</div>
   <fieldset>
     <legend>presets</legend>
     <label>recipe
@@ -74,6 +74,13 @@
       <input id="in-grid" type="range" min="40" max="120" step="10" value="80"></label>
     <label>rings <span class="val" id="val-rings">1</span>
       <input id="in-rings" type="range" min="1" max="8" step="1" value="1"></label>
+    <label>surface
+      <select id="in-surface">
+        <option value="flat" selected>flat</option>
+        <option value="cube">cube</option>
+        <option value="sphere">sphere</option>
+        <option value="gem">gem</option>
+      </select></label>
   </fieldset>
   <fieldset>
     <legend>live</legend>
@@ -112,6 +119,7 @@ const settings = {
   count: 100,
   gridSize: 80,
   rings: 1,           // number of independent chains, applied on restart
+  surface: 'flat',    // flat | cube | sphere | gem — 3D modes run on a stitched cube-surface grid
   speed: 10,          // ticks per second
   wrap: true,
   corpses: false,     // corpses block movement
@@ -158,6 +166,119 @@ const DIRS = {
   // prey is caught by landing orthogonally adjacent instead of on top
   diagonal: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
 };
+
+// ---- 3D: the cube-surface grid ----
+// Six G×G faces stitched at the edges. One topology serves all solids: cell
+// positions on the unit cube get projected radially — sphere (L2 normalize)
+// or "gem"/octahedron (L1 normalize) — and distances are measured in the
+// projected space, so the solid changes the dynamics, not just the look.
+let surf = null;
+const surfCache = {};
+
+function mode3D() { return settings.surface !== 'flat'; }
+
+function buildSurface(G, projection) {
+  const key = G + ':' + projection;
+  if (surfCache[key]) return surfCache[key];
+  const FACES = [
+    { a: 0, s: 1 }, { a: 0, s: -1 },
+    { a: 1, s: 1 }, { a: 1, s: -1 },
+    { a: 2, s: 1 }, { a: 2, s: -1 },
+  ];
+  const idOf = (f, u, v) => (f * G + u) * G + v;
+  const project = p => {
+    if (projection === 'sphere') {
+      const L = Math.hypot(p[0], p[1], p[2]);
+      return [p[0] / L, p[1] / L, p[2] / L];
+    }
+    if (projection === 'gem') {
+      const L = Math.abs(p[0]) + Math.abs(p[1]) + Math.abs(p[2]);
+      return [p[0] / L, p[1] / L, p[2] / L];
+    }
+    return p;
+  };
+  const center = (f, u, v) => {
+    const { a, s } = FACES[f];
+    const b = (a + 1) % 3, c = (a + 2) % 3;
+    const p = [0, 0, 0];
+    p[a] = s;
+    p[b] = -1 + (2 * (u + 0.5)) / G;
+    p[c] = -1 + (2 * (v + 0.5)) / G;
+    return p;
+  };
+  const pointToCell = pt => {
+    let a = 0;
+    if (Math.abs(pt[1]) > Math.abs(pt[a])) a = 1;
+    if (Math.abs(pt[2]) > Math.abs(pt[a])) a = 2;
+    const s = pt[a] >= 0 ? 1 : -1;
+    const f = FACES.findIndex(F => F.a === a && F.s === s);
+    const b = (a + 1) % 3, c = (a + 2) % 3;
+    const u = Math.min(G - 1, Math.max(0, Math.floor(((pt[b] + 1) / 2) * G)));
+    const v = Math.min(G - 1, Math.max(0, Math.floor(((pt[c] + 1) / 2) * G)));
+    return idOf(f, u, v);
+  };
+  const N = 6 * G * G;
+  const proj = new Array(N), orth = new Array(N), diag = new Array(N);
+  const step = 2 / G;
+  for (let f = 0; f < 6; f++) for (let u = 0; u < G; u++) for (let v = 0; v < G; v++) {
+    const id = idOf(f, u, v);
+    const p0 = center(f, u, v);
+    proj[id] = project(p0);
+    const { a } = FACES[f];
+    const b = (a + 1) % 3, c = (a + 2) % 3;
+    const ns = [];
+    for (const [axis, d] of [[b, 1], [b, -1], [c, 1], [c, -1]]) {
+      const q = p0.slice();
+      q[axis] += d * step;
+      if (Math.abs(q[axis]) > 1) {
+        // stepped off the face: fold onto the neighboring face. The stepped
+        // axis lands on the edge (±1, the new face's fixed axis) and the old
+        // fixed axis pulls inward by the overshoot.
+        const excess = Math.abs(q[axis]) - 1;
+        q[axis] = Math.sign(q[axis]);
+        q[a] = Math.sign(q[a]) * (1 - excess);
+      }
+      ns.push(pointToCell(q));
+    }
+    orth[id] = ns;
+  }
+  // diagonals: cells reachable via two DIFFERENT orthogonal intermediates.
+  // (A straight two-step has only one intermediate, a diagonal has two —
+  // and this definition stays valid across edges and at cube corners.)
+  for (let id = 0; id < N; id++) {
+    const hits = new Map();
+    for (const n of orth[id]) for (const m of orth[n]) {
+      if (m === id || orth[id].includes(m)) continue;
+      hits.set(m, (hits.get(m) || 0) + 1);
+    }
+    diag[id] = [];
+    for (const [m, k] of hits) if (k >= 2) diag[id].push(m);
+  }
+  // the 12 cube edges, projected, drawn as seams so the solid reads in space
+  const seams = [];
+  const corners = [];
+  for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) corners.push([x, y, z]);
+  for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) {
+    let d = 0;
+    for (let k = 0; k < 3; k++) if (corners[i][k] !== corners[j][k]) d++;
+    if (d !== 1) continue;
+    const line = [];
+    for (let t = 0; t <= 24; t++) {
+      line.push(project(corners[i].map((av, k) => av + ((corners[j][k] - av) * t) / 24)));
+    }
+    seams.push(line);
+  }
+  surfCache[key] = { G, N, proj, orth, diag, seams };
+  return surfCache[key];
+}
+
+function dist3(ca, cb) {
+  const A = surf.proj[ca], B = surf.proj[cb];
+  return (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2 + (A[2] - B[2]) ** 2;
+}
+
+// occupancy/corpse key for a pixel in either mode
+function pixelKey(p) { return mode3D() ? p.cell : cellKey(p.x, p.y); }
 
 function dist2(x1, y1, x2, y2) {
   const G = settings.gridSize;
@@ -243,6 +364,76 @@ function stepPixel(i) {
   occ.set(cellKey(p.x, p.y), i);
 }
 
+// stepPixel's twin for the cube-surface grid: same rules, cell ids instead
+// of coordinates, projected 3D distance instead of torus distance.
+function stepPixel3D(i) {
+  const p = px[i];
+  const prey = px[p.prey], hunter = px[p.hunter];
+  const step = 2 / surf.G;
+  const vr = settings.vision >= 42 ? Infinity : (settings.vision * step) ** 2;
+  const preyAlive = p.prey !== i && prey.alive;
+  const huntAlive = p.hunter !== i && hunter.alive;
+  const chasing = preyAlive && dist3(p.cell, prey.cell) <= vr;
+  const fleeing = huntAlive && dist3(p.cell, hunter.cell) <= vr;
+  const wandering = !chasing && !fleeing && (preyAlive || huntAlive);
+  if (!chasing && !fleeing && !wandering) return;
+
+  let neigh;
+  if (settings.moves === 'orthogonal') neigh = surf.orth[p.cell];
+  else if (settings.moves === 'diagonal') neigh = surf.diag[p.cell];
+  else neigh = surf.orth[p.cell].concat(surf.diag[p.cell]);
+
+  const cands = [];
+  let best = [], bestA = Infinity, bestB = Infinity;
+  const aggressive = p.temper * 100 < settings.aggressivePct;
+  for (const nc of [p.cell, ...neigh]) {
+    if (corpseCells.has(nc)) continue;
+    const isPreyCell = chasing && nc === prey.cell;
+    const occupant = occ.get(nc);
+    if (occupant !== undefined && occupant !== i && !isPreyCell) continue;
+    cands.push(nc);
+    const dPrey = chasing ? dist3(nc, prey.cell) : 0;
+    const dHunt = fleeing ? -dist3(nc, hunter.cell) : 0;
+    const a = aggressive ? dPrey : dHunt;
+    const b = aggressive ? dHunt : dPrey;
+    if (a < bestA || (a === bestA && b < bestB)) {
+      best = [nc]; bestA = a; bestB = b;
+    } else if (a === bestA && b === bestB) {
+      best.push(nc);
+    }
+  }
+  if (cands.length === 0) return;
+  const m = (wandering || random(1) * 100 < settings.jitter)
+    ? cands[Math.floor(random(cands.length))]
+    : best[Math.floor(random(best.length))];
+  if (m === p.cell) return;
+
+  const ontoPrey = chasing && m === prey.cell;
+  const adjCapture = chasing && !ontoPrey && settings.moves === 'diagonal'
+    && surf.orth[m].includes(prey.cell);
+  if (ontoPrey || adjCapture) {
+    prey.alive = false;
+    occ.delete(prey.cell);
+    captures++;
+    p.hunger = 0;
+    if (settings.inherit) {
+      p.prey = prey.prey;
+      px[p.prey].hunter = i;
+    }
+    if (settings.corpses) {
+      corpseCells.add(prey.cell);
+      if (ontoPrey) return;
+    }
+  }
+  if (settings.trails) {
+    (p.trail ||= []).push(p.cell);
+    if (p.trail.length > 8) p.trail.shift();
+  }
+  occ.delete(p.cell);
+  p.cell = m;
+  occ.set(p.cell, i);
+}
+
 function isSettled() {
   for (let i = 0; i < px.length; i++) {
     const p = px[i];
@@ -268,8 +459,9 @@ function runTick() {
       [order[j], order[r]] = [order[r], order[j]];
     }
   }
+  const step3D = mode3D();
   for (const i of order) {
-    if (px[i].alive) stepPixel(i); // may have been caught earlier this tick
+    if (px[i].alive) (step3D ? stepPixel3D : stepPixel)(i); // may have been caught earlier this tick
   }
   if (settings.starve > 0) {
     for (let i = 0; i < px.length; i++) {
@@ -286,35 +478,52 @@ function runTick() {
 function starveOut(i) {
   const p = px[i];
   p.alive = false;
-  occ.delete(cellKey(p.x, p.y));
+  occ.delete(pixelKey(p));
   starved++;
   if (settings.inherit && px[p.hunter].alive) {
     // close the ring around the starved pixel
     px[p.hunter].prey = p.prey;
     px[p.prey].hunter = p.hunter;
   }
-  if (settings.corpses) corpseCells.add(cellKey(p.x, p.y));
+  if (settings.corpses) corpseCells.add(pixelKey(p));
 }
 
 function seedSim() {
   const N = settings.count, G = settings.gridSize;
   px = []; occ = new Map(); corpseCells = new Set();
   tick = 0; captures = 0; starved = 0; settled = false; acc = 0;
-  const cells = new Set();
-  while (cells.size < N) {
-    cells.add(cellKey(Math.floor(random(G)), Math.floor(random(G))));
-  }
-  let i = 0;
-  for (const k of cells) {
-    const [x, y] = k.split(',').map(Number);
-    // temper is a fixed draw in [0,1): the pixel plays aggressive while
-    // temper*100 < aggressivePct, so the slider converts pixels smoothly
-    px.push({
-      x, y, hue: 0, alive: true, temper: random(1),
-      prey: i, hunter: i, hunger: 0,
-    });
-    occ.set(k, i);
-    i++;
+  // temper is a fixed draw in [0,1): the pixel plays aggressive while
+  // temper*100 < aggressivePct, so the slider converts pixels smoothly
+  if (mode3D()) {
+    surf = buildSurface(G, settings.surface);
+    const cells = new Set();
+    while (cells.size < Math.min(N, surf.N)) {
+      cells.add(Math.floor(random(surf.N)));
+    }
+    let i = 0;
+    for (const cell of cells) {
+      px.push({
+        cell, hue: 0, alive: true, temper: random(1),
+        prey: i, hunter: i, hunger: 0,
+      });
+      occ.set(cell, i);
+      i++;
+    }
+  } else {
+    const cells = new Set();
+    while (cells.size < N) {
+      cells.add(cellKey(Math.floor(random(G)), Math.floor(random(G))));
+    }
+    let i = 0;
+    for (const k of cells) {
+      const [x, y] = k.split(',').map(Number);
+      px.push({
+        x, y, hue: 0, alive: true, temper: random(1),
+        prey: i, hunter: i, hunger: 0,
+      });
+      occ.set(k, i);
+      i++;
+    }
   }
   // link K independent rings over consecutive index ranges, each with its
   // own hue family (a single ring keeps the full rainbow)
@@ -385,6 +594,7 @@ function cellAt(mx, my) {
 }
 
 function mousePressed() {
+  if (mode3D()) return; // the mouse orbits the camera in 3D
   if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
   tryAddCell(...cellAt(mouseX, mouseY));
 }
@@ -409,6 +619,7 @@ const RECIPES = {
 // Shapes are placed as one chain in path order, onto a cleared, paused grid —
 // tweak parameters, then resume to set it loose.
 function drawShape(name) {
+  if (mode3D()) return; // shape presets are flat-surface only (for now)
   if (!paused) { paused = true; pauseBtn.textContent = 'resume'; }
   clearSim();
   lastShape = name;
@@ -462,6 +673,7 @@ function drawShape(name) {
 }
 
 function mouseDragged() {
+  if (mode3D()) return; // the mouse orbits the camera in 3D
   if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
   // paint every cell the pointer crosses, interpolating between drag samples
   // so fast strokes don't leave gaps
@@ -508,15 +720,73 @@ function render() {
     noStroke();
   }
   colorMode(RGB, 255, 255, 255, 255);
+  updateStats();
+}
+
+function updateStats() {
   statsEl.innerHTML = 'tick ' + tick + ' · alive ' + aliveCount() + ' · captures ' + captures
     + (starved > 0 ? ' · starved ' + starved : '')
     + (settled && aliveCount() > 0 ? ' · <span class="settled">settled</span>' : '');
 }
 
-function setup() {
-  const c = createCanvas(640, 640);
+function render3D() {
+  background(11, 11, 14);
+  orbitControl(1, 1, 0.2);
+  const R = 220;
+  const cellPx = Math.max(2, ((2 * R) / surf.G) * 0.8);
+  noFill();
+  stroke(48);
+  strokeWeight(1);
+  for (const seam of surf.seams) {
+    beginShape();
+    for (const q of seam) vertex(q[0] * R, q[1] * R, q[2] * R);
+    endShape();
+  }
+  colorMode(HSB, 360, 100, 100, 1);
+  noStroke();
+  for (const p of px) {
+    if (p.alive) continue;
+    fill(0, 0, corpseCells.has(p.cell) ? 40 : 18);
+    const q = surf.proj[p.cell];
+    push(); translate(q[0] * R, q[1] * R, q[2] * R); box(cellPx); pop();
+  }
+  for (const p of px) {
+    if (!p.alive) continue;
+    if (settings.trails && p.trail) {
+      for (let t = 0; t < p.trail.length; t++) {
+        const q = surf.proj[p.trail[t]];
+        fill(p.hue, 70, 60, ((t + 1) / (p.trail.length + 1)) * 0.5);
+        push(); translate(q[0] * R, q[1] * R, q[2] * R); box(cellPx * 0.55); pop();
+      }
+    }
+    fill(p.hue, 80, 100);
+    const q = surf.proj[p.cell];
+    push(); translate(q[0] * R, q[1] * R, q[2] * R); box(cellPx); pop();
+  }
+  if (settings.chaseLines) {
+    strokeWeight(1);
+    for (let i = 0; i < px.length; i++) {
+      const p = px[i], q2 = px[p.prey];
+      if (p.alive && p.prey !== i && q2.alive) {
+        stroke(p.hue, 60, 100, 0.35);
+        const A = surf.proj[p.cell], B = surf.proj[q2.cell];
+        line(A[0] * R, A[1] * R, A[2] * R, B[0] * R, B[1] * R, B[2] * R);
+      }
+    }
+    noStroke();
+  }
+  colorMode(RGB, 255, 255, 255, 255);
+  updateStats();
+}
+
+function rebuildCanvas() {
+  const c = createCanvas(640, 640, mode3D() ? WEBGL : P2D);
   c.parent('sketch');
+}
+
+function setup() {
   const fromHash = applyHash();
+  rebuildCanvas();
   if (fromHash) syncUI();
   seedSim();
   if (typeof fromHash === 'string') drawShape(fromHash); // shape links open paused, ready to resume
@@ -532,7 +802,7 @@ function draw() {
       if (settled) break;
     }
   }
-  render();
+  if (mode3D()) render3D(); else render();
 }
 
 function bindRange(id, valId, onInput) {
@@ -565,7 +835,7 @@ document.getElementById('in-corpses').addEventListener('input', e => {
   settings.corpses = e.target.checked;
   corpseCells = new Set();
   if (settings.corpses) {
-    for (const p of px) if (!p.alive) corpseCells.add(cellKey(p.x, p.y));
+    for (const p of px) if (!p.alive) corpseCells.add(pixelKey(p));
   }
 });
 bindCheck('in-trails', 'trails');
@@ -580,6 +850,14 @@ document.getElementById('in-moves').addEventListener('input', e => {
 
 document.getElementById('in-speedmode').addEventListener('input', e => {
   settings.speedMode = e.target.value;
+});
+
+document.getElementById('in-surface').addEventListener('input', e => {
+  // p5 can't reliably swap P2D <-> WEBGL on a live canvas: write the state
+  // into the hash and reload — the hash restores everything on boot
+  settings.surface = e.target.value;
+  syncHash();
+  location.reload();
 });
 
 const starveEl = document.getElementById('in-starve');
@@ -626,6 +904,7 @@ function stateToHash() {
     'w=' + (+s.wrap), 'c=' + (+s.corpses), 'o=' + (+s.shuffled), 'i=' + (+s.inherit),
     'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
+    'sf=' + s.surface,
   ];
   if (lastShape) parts.push('shape=' + lastShape);
   return parts.join('&');
@@ -653,6 +932,8 @@ function applyHash() {
   if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
+  const sf = q.get('sf');
+  if (sf && ['flat', 'cube', 'sphere', 'gem'].includes(sf)) settings.surface = sf;
   const shape = q.get('shape');
   return (shape && ['circle', 'square', 'spiral', 'line', 'lattice'].includes(shape)) ? shape : true;
 }
@@ -684,6 +965,7 @@ function syncUI() {
   document.getElementById('val-starve').textContent = settings.starve === 0 ? 'off' : settings.starve;
   set('in-rings', settings.rings);
   document.getElementById('val-rings').textContent = settings.rings;
+  set('in-surface', settings.surface);
 }
 
 document.getElementById('in-recipe').addEventListener('input', e => {

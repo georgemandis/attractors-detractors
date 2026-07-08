@@ -111,6 +111,22 @@ Toggleable: wrap-around (torus) or hard walls. Wrap keeps chases alive and
 lets mill/spiral dynamics emerge; walls create corner traps and faster, more
 brutal resolutions.
 
+## 3D surfaces
+
+The *surface* select (on restart) offers flat plus three solids that share
+one topology: the cube surface — six G×G faces stitched at the edges, every
+cell with exactly 4 orthogonal neighbors and 3–4 diagonal ones (diagonals
+are cells reachable via two distinct orthogonal intermediates, which stays
+valid across edges and cube corners). Cell positions on the unit cube are
+projected radially — *sphere* (L2 normalize) or *gem*/octahedron (L1
+normalize) — and move scoring uses squared distance in the projected space,
+so the solid changes the dynamics, not just the look. Rendered in WEBGL with
+orbit controls; trails become fading per-pixel history; the wrap toggle is
+inert (closed surfaces); click-to-add and shape presets are flat-only.
+Vision scales by cell size (2/G) to stay comparable. Switching surfaces
+writes the state hash and reloads the page, since p5 cannot reliably swap
+P2D and WEBGL renderers on a live canvas.
+
 ## Visuals
 
 - Each pixel colored by ring position mapped around the hue wheel, so the
@@ -132,6 +148,7 @@ brutal resolutions.
 | Pixel count | slider 10–500 | 100 |
 | Grid size | slider (square, e.g. 40–120) | 80 |
 | Rings | slider 1–8 (on restart) | 1 |
+| Surface | select flat / cube / sphere / gem (on restart) | flat |
 | Speed (ticks/sec) | slider | ~10 |
 | Pause / single-step | buttons | running |
 | Topology | toggle wrap/walls | wrap |
