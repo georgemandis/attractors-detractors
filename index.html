@@ -144,6 +144,8 @@ let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
 let chainHead = null;         // whom the next click-added pixel will chase
 let lastShape = null;         // shape preset the current grid was drawn from, for share links
+let runSeed = null;           // RNG seed of the current run — share links replay it
+let pendingSeed = null;       // seed parsed from an opened share link, consumed by the next seed
 
 const statsEl = document.getElementById('stats');
 
@@ -538,6 +540,11 @@ function seedSim() {
   const N = settings.count, G = settings.gridSize;
   px = []; occ = new Map(); corpseCells = new Set();
   tick = 0; captures = 0; starved = 0; settled = false; acc = 0;
+  // every run is seeded so a share link can replay it exactly; restart
+  // draws a fresh seed, opening a link consumes the one it carried
+  runSeed = pendingSeed !== null ? pendingSeed : Math.floor(Math.random() * 1e9);
+  pendingSeed = null;
+  randomSeed(runSeed);
   // temper is a fixed draw in [0,1): the pixel plays aggressive while
   // temper*100 < aggressivePct, so the slider converts pixels smoothly
   if (mode3D()) {
@@ -952,6 +959,7 @@ function stateToHash() {
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
     'sf=' + s.surface,
   ];
+  if (runSeed !== null) parts.push('sd=' + runSeed);
   if (lastShape) parts.push('shape=' + lastShape);
   return parts.join('&');
 }
@@ -980,6 +988,10 @@ function applyHash() {
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
   const sf = q.get('sf');
   if (sf && ['flat', 'cube', 'sphere', 'gem', 'torus'].includes(sf)) settings.surface = sf;
+  if (q.has('sd')) {
+    const sd = Number(q.get('sd'));
+    if (Number.isFinite(sd)) pendingSeed = Math.abs(Math.floor(sd));
+  }
   const shape = q.get('shape');
   return (shape && ['circle', 'square', 'spiral', 'line', 'lattice'].includes(shape)) ? shape : true;
 }
