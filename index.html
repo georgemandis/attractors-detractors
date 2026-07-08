@@ -80,6 +80,7 @@
         <option value="cube">cube</option>
         <option value="sphere">sphere</option>
         <option value="gem">gem</option>
+        <option value="torus">torus</option>
       </select></label>
   </fieldset>
   <fieldset>
@@ -180,6 +181,48 @@ function mode3D() { return settings.surface !== 'flat'; }
 function buildSurface(G, projection) {
   const key = G + ':' + projection;
   if (surfCache[key]) return surfCache[key];
+  if (projection === 'torus') {
+    // The flat wrap-mode grid IS a torus — this just embeds it as a donut.
+    // Distances use the same wrapped grid metric as flat mode, so the
+    // dynamics are identical to flat+wrap; only the view changes.
+    const N = G * G;
+    const R0 = 0.72, r0 = 0.34;
+    const idOf = (x, y) => x * G + y;
+    const w = k => ((k % G) + G) % G;
+    const donut = (u, v) => [
+      (R0 + r0 * Math.cos(v)) * Math.cos(u),
+      (R0 + r0 * Math.cos(v)) * Math.sin(u),
+      r0 * Math.sin(v),
+    ];
+    const proj = new Array(N), orth = new Array(N), diag = new Array(N);
+    for (let x = 0; x < G; x++) for (let y = 0; y < G; y++) {
+      const id = idOf(x, y);
+      proj[id] = donut((x / G) * Math.PI * 2, (y / G) * Math.PI * 2);
+      orth[id] = [idOf(w(x + 1), y), idOf(w(x - 1), y), idOf(x, w(y + 1)), idOf(x, w(y - 1))];
+      diag[id] = [idOf(w(x + 1), w(y + 1)), idOf(w(x + 1), w(y - 1)), idOf(w(x - 1), w(y + 1)), idOf(w(x - 1), w(y - 1))];
+    }
+    const seams = [];
+    for (let k = 0; k < 8; k++) {
+      const u = (k / 8) * Math.PI * 2, line = [];
+      for (let t = 0; t <= 24; t++) line.push(donut(u, (t / 24) * Math.PI * 2));
+      seams.push(line);
+    }
+    for (const v of [0, Math.PI]) {
+      const line = [];
+      for (let t = 0; t <= 48; t++) line.push(donut((t / 48) * Math.PI * 2, v));
+      seams.push(line);
+    }
+    const cellScale = (2 / G) ** 2; // one grid step ≈ one chord step on the other solids
+    const dist = (ca, cb) => {
+      let dx = Math.abs(Math.floor(ca / G) - Math.floor(cb / G));
+      let dy = Math.abs((ca % G) - (cb % G));
+      dx = Math.min(dx, G - dx);
+      dy = Math.min(dy, G - dy);
+      return (dx * dx + dy * dy) * cellScale;
+    };
+    surfCache[key] = { G, N, proj, orth, diag, seams, dist };
+    return surfCache[key];
+  }
   const FACES = [
     { a: 0, s: 1 }, { a: 0, s: -1 },
     { a: 1, s: 1 }, { a: 1, s: -1 },
@@ -268,14 +311,17 @@ function buildSurface(G, projection) {
     }
     seams.push(line);
   }
-  surfCache[key] = { G, N, proj, orth, diag, seams };
+  const dist = (ca, cb) => {
+    const A = proj[ca], B = proj[cb];
+    return (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2 + (A[2] - B[2]) ** 2;
+  };
+  surfCache[key] = { G, N, proj, orth, diag, seams, dist };
   return surfCache[key];
 }
 
-function dist3(ca, cb) {
-  const A = surf.proj[ca], B = surf.proj[cb];
-  return (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2 + (A[2] - B[2]) ** 2;
-}
+// each surface supplies its own metric: chord distance for the projected
+// solids, wrapped grid distance for the torus (matching flat+wrap exactly)
+function dist3(ca, cb) { return surf.dist(ca, cb); }
 
 // occupancy/corpse key for a pixel in either mode
 function pixelKey(p) { return mode3D() ? p.cell : cellKey(p.x, p.y); }
@@ -933,7 +979,7 @@ function applyHash() {
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
   const sf = q.get('sf');
-  if (sf && ['flat', 'cube', 'sphere', 'gem'].includes(sf)) settings.surface = sf;
+  if (sf && ['flat', 'cube', 'sphere', 'gem', 'torus'].includes(sf)) settings.surface = sf;
   const shape = q.get('shape');
   return (shape && ['circle', 'square', 'spiral', 'line', 'lattice'].includes(shape)) ? shape : true;
 }
