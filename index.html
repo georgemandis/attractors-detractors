@@ -28,7 +28,8 @@
   #stats .settled { color: #e6c96b; }
   #spark { display: block; border: 1px solid #26262e; border-radius: 4px; }
   #winner { color: #e6c96b; }
-  #winner .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+  #winner .swatch, #focus .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+  #focus { color: #9ecbff; }
   fieldset { border: 1px solid #26262e; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
   legend { color: #8f8f9c; padding: 0 4px; }
   .row { display: flex; gap: 8px; }
@@ -41,6 +42,7 @@
   <div id="stats"></div>
   <canvas id="spark" width="220" height="44"></canvas>
   <div id="winner" hidden></div>
+  <div id="focus" hidden></div>
   <div class="row">
     <button id="btn-pause">pause</button>
     <button id="btn-step">step</button>
@@ -157,6 +159,7 @@ let occ = new Map();          // "x,y" -> index of living pixel
 let corpseCells = new Set();  // "x,y"
 let wallCells = new Set();    // "x,y" — user-painted terrain; survives restart, cleared by clear
 let ringCount = 1;            // number of rings in the current run (for rivalry)
+let focusIdx = null;          // pixel selected by clicking it — highlighted with its prey/hunter
 let tick = 0, captures = 0, starved = 0;
 let settled = false, paused = false;
 let acc = 0;                  // ms accumulator for tick timing
@@ -651,6 +654,7 @@ function seedSim() {
   px = []; occ = new Map(); corpseCells = new Set();
   tick = 0; captures = 0; starved = 0; settled = false; acc = 0;
   hist = []; popMax = Math.max(1, N);
+  focusIdx = null;
   // every run is seeded so a share link can replay it exactly; restart
   // draws a fresh seed, opening a link consumes the one it carried
   runSeed = pendingSeed !== null ? pendingSeed : Math.floor(Math.random() * 1e9);
@@ -719,6 +723,7 @@ function clearSim() {
   lastShape = null;
   hist = []; popMax = 1;
   wallCells = new Set();
+  focusIdx = null;
   background(11, 11, 14);
 }
 
@@ -781,7 +786,15 @@ function cellAt(mx, my) {
 function mousePressed() {
   if (mode3D()) return; // the mouse orbits the camera in 3D
   if (mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return;
-  paintCell(...cellAt(mouseX, mouseY));
+  const [cx, cy] = cellAt(mouseX, mouseY);
+  const k = cellKey(cx, cy);
+  if (settings.brush === 'pixels' && occ.has(k)) {
+    // clicking a living pixel follows it (click it again to unfollow)
+    const idx = occ.get(k);
+    focusIdx = focusIdx === idx ? null : idx;
+    return;
+  }
+  paintCell(cx, cy);
 }
 
 // Every recipe spells out the full parameter set so leftovers from play
@@ -910,6 +923,24 @@ function render() {
     }
     noStroke();
   }
+  // followed pixel: white ring, green line to prey, red line to hunter
+  if (focusIdx !== null && px[focusIdx] && px[focusIdx].alive) {
+    const f = px[focusIdx];
+    const mid = q => [q.x * cs + cs / 2, q.y * cs + cs / 2];
+    strokeWeight(1.5);
+    if (f.prey !== focusIdx && px[f.prey].alive) {
+      stroke(130, 80, 90, 0.8);
+      line(...mid(f), ...mid(px[f.prey]));
+    }
+    if (f.hunter !== focusIdx && px[f.hunter].alive) {
+      stroke(0, 80, 100, 0.8);
+      line(...mid(f), ...mid(px[f.hunter]));
+    }
+    noFill();
+    stroke(0, 0, 100, 0.9);
+    rect(f.x * cs - 2, f.y * cs - 2, cs + 4, cs + 4);
+    noStroke();
+  }
   colorMode(RGB, 255, 255, 255, 255);
   updateStats();
 }
@@ -953,6 +984,21 @@ function updateStats() {
       + ' · ' + (w.kills || 0) + ' kill' + ((w.kills || 0) === 1 ? '' : 's') + ' · ' + tick + ' ticks';
   } else {
     winnerEl.hidden = true;
+  }
+  // bio line for the followed pixel
+  const focusDiv = document.getElementById('focus');
+  if (focusIdx !== null && px[focusIdx]) {
+    const f = px[focusIdx];
+    const temperament = f.temper * 100 < settings.aggressivePct ? 'aggressive' : 'cautious';
+    focusDiv.hidden = false;
+    focusDiv.innerHTML = '<span class="swatch" style="background:hsl(' + Math.round(f.hue)
+      + ',80%,60%)"></span> #' + focusIdx + (f.alive
+        ? ' — ' + temperament + ' · ' + (f.kills || 0) + ' kills'
+          + (settings.starve > 0 && f.prey !== focusIdx && px[f.prey].alive
+             ? ' · hunger ' + f.hunger + '/' + settings.starve : '')
+        : ' — ☠ dead');
+  } else {
+    focusDiv.hidden = true;
   }
 }
 
