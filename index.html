@@ -69,6 +69,7 @@
         <option value="graveyard maze">graveyard maze</option>
         <option value="drunken brawl">drunken brawl</option>
         <option value="tortoise hunt">tortoise hunt</option>
+        <option value="ring factions">ring factions</option>
       </select></label>
     <label>shape
       <select id="in-shape">
@@ -106,6 +107,7 @@
     <label>shuffled order <input id="in-shuffled" type="checkbox" checked></label>
     <label>inherit prey <input id="in-inherit" type="checkbox" checked></label>
     <label>ring rivalry <input id="in-rivalry" type="checkbox"></label>
+    <label title="each ring fans aggressive %, vision and jitter out around the sliders">vary by ring <input id="in-vary" type="checkbox"></label>
     <label>evolve <input id="in-evolve" type="checkbox"></label>
     <label>moves
       <select id="in-moves">
@@ -152,6 +154,7 @@ const settings = {
   aggressivePct: 50,  // % of pixels playing the aggressive strategy
   inherit: true,      // catcher inherits its victim's prey (ring never breaks)
   rivalry: false,     // with >1 rings: ring r can trample any pixel of ring r+1 (spatial RPS)
+  varyByRing: false,  // with >1 rings: each ring fans aggressive%/vision/jitter out around the sliders
   evolve: false,      // every death spawns a mutated child of a random survivor
   jitter: 0,          // % chance per pixel per tick of a random move instead of the scored one
   moves: 'all',       // movement neighborhood: all | orthogonal | diagonal
@@ -170,6 +173,33 @@ let occ = new Map();          // "x,y" -> index of living pixel
 let corpseCells = new Set();  // "x,y"
 let wallCells = new Set();    // "x,y" — user-painted terrain; survives restart, cleared by clear
 let ringCount = 1;            // number of rings in the current run (for rivalry)
+
+// Per-ring personalities. When "vary by ring" is on and there's more than one
+// ring, each ring fans its behaviour params out around the global slider value,
+// so ring 0 and ring K-1 sit at opposite ends of every spread (ring 0 the most
+// cautious/near-sighted, the last ring the most aggressive/far-sighted). It's a
+// pure function of the ring index — no RNG — so a run replays identically from
+// the share hash whether or not the seed changed.
+let ringParams = [];          // ringParams[r] = {aggressivePct, vision, jitter}; empty = share the global sliders
+const RING_SPREAD = { aggressivePct: 50, vision: 20, jitter: 25 };
+
+function computeRingParams(K) {
+  ringParams = [];
+  if (!settings.varyByRing || K < 2) return; // one ring, or off: everyone reads settings
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  for (let r = 0; r < K; r++) {
+    const f = (r / (K - 1)) * 2 - 1; // -1 at ring 0 .. +1 at ring K-1
+    ringParams[r] = {
+      aggressivePct: clamp(Math.round(settings.aggressivePct + f * RING_SPREAD.aggressivePct), 0, 100),
+      vision: clamp(Math.round(settings.vision + f * RING_SPREAD.vision), 2, 42),
+      jitter: clamp(Math.round(settings.jitter + f * RING_SPREAD.jitter), 0, 100),
+    };
+  }
+}
+
+// the behaviour params in force for a pixel: its ring's personality when
+// "vary by ring" populated one, otherwise the global sliders
+function ringP(p) { return ringParams[p.ring || 0] || settings; }
 let focusIdx = null;          // pixel selected by clicking it — highlighted with its prey/hunter
 let tick = 0, captures = 0, starved = 0, births = 0;
 let settled = false, paused = false;
@@ -446,7 +476,8 @@ function stepPixel(i) {
   const p = px[i];
   const [preyIdx, hunterIdx] = resolveTargets(i);
   const prey = px[preyIdx], hunter = px[hunterIdx];
-  const vr = settings.vision >= 42 ? Infinity : settings.vision * settings.vision;
+  const rp = ringP(p);
+  const vr = rp.vision >= 42 ? Infinity : rp.vision * rp.vision;
   const preyAlive = preyIdx !== i && prey.alive;
   const huntAlive = hunterIdx !== i && hunter.alive;
   const chasing = preyAlive && dist2(p.x, p.y, prey.x, prey.y) <= vr;
@@ -478,7 +509,7 @@ function stepPixel(i) {
     // Inactive criteria contribute a constant 0, which never affects ordering.
     const dPrey = chasing ? dist2(nx, ny, prey.x, prey.y) : 0;
     const dHunt = fleeing ? -dist2(nx, ny, hunter.x, hunter.y) : 0; // negated: farther is better
-    const aggressive = p.temper * 100 < settings.aggressivePct;
+    const aggressive = p.temper * 100 < rp.aggressivePct;
     const a = aggressive ? dPrey : dHunt;
     const b = aggressive ? dHunt : dPrey;
     if (a < bestA || (a === bestA && b < bestB)) {
@@ -490,7 +521,7 @@ function stepPixel(i) {
   if (cands.length === 0) return;
   // wanderers and jittering pixels ignore strategy for this tick and move at
   // random — random blunders onto the prey's cell still capture
-  const m = (wandering || random(1) * 100 < settings.jitter)
+  const m = (wandering || random(1) * 100 < rp.jitter)
     ? cands[Math.floor(random(cands.length))]
     : best[Math.floor(random(best.length))];
   if (m.x === p.x && m.y === p.y) return;
@@ -553,8 +584,9 @@ function stepPixel3D(i) {
   const p = px[i];
   const [preyIdx, hunterIdx] = resolveTargets(i);
   const prey = px[preyIdx], hunter = px[hunterIdx];
+  const rp = ringP(p);
   const step = 2 / surf.G;
-  const vr = settings.vision >= 42 ? Infinity : (settings.vision * step) ** 2;
+  const vr = rp.vision >= 42 ? Infinity : (rp.vision * step) ** 2;
   const preyAlive = preyIdx !== i && prey.alive;
   const huntAlive = hunterIdx !== i && hunter.alive;
   const chasing = preyAlive && dist3(p.cell, prey.cell) <= vr;
@@ -569,7 +601,7 @@ function stepPixel3D(i) {
 
   const cands = [];
   let best = [], bestA = Infinity, bestB = Infinity;
-  const aggressive = p.temper * 100 < settings.aggressivePct;
+  const aggressive = p.temper * 100 < rp.aggressivePct;
   for (const nc of [p.cell, ...neigh]) {
     if (corpseCells.has(nc)) continue;
     const isPreyCell = chasing && nc === prey.cell;
@@ -589,7 +621,7 @@ function stepPixel3D(i) {
     }
   }
   if (cands.length === 0) return;
-  const m = (wandering || random(1) * 100 < settings.jitter)
+  const m = (wandering || random(1) * 100 < rp.jitter)
     ? cands[Math.floor(random(cands.length))]
     : best[Math.floor(random(best.length))];
   if (m === p.cell) return;
@@ -669,7 +701,7 @@ function runTick() {
   for (let i = 0; i < px.length; i++) {
     if (!px[i].alive) continue;
     if (settings.speedMode !== 'uniform' && tick % 2 === 1) {
-      const aggr = px[i].temper * 100 < settings.aggressivePct;
+      const aggr = px[i].temper * 100 < ringP(px[i]).aggressivePct;
       const fast = settings.speedMode === 'fast-aggressive' ? aggr : !aggr;
       if (!fast) continue; // slow class sits out odd ticks
     }
@@ -803,6 +835,7 @@ function seedSim() {
   // own hue family (a single ring keeps the full rainbow)
   const K = Math.max(1, Math.min(settings.rings, N));
   ringCount = K;
+  computeRingParams(K);
   let start = 0;
   for (let r = 0; r < K; r++) {
     const size = Math.floor(N / K) + (r < N % K ? 1 : 0);
@@ -908,17 +941,21 @@ function mousePressed() {
 // never leak in. count/grid/speed/trails/lines stay user-controlled.
 const RECIPES = {
   'battle royale':    { wrap: false, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
-                        aggressivePct: 70, jitter: 0, vision: 42, starve: 100, rings: 1 },
+                        aggressivePct: 70, jitter: 0, vision: 42, starve: 100, rings: 1, varyByRing: false },
   'ecosystem panic':  { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
-                        aggressivePct: 60, jitter: 10, vision: 10, starve: 0, rings: 4 },
+                        aggressivePct: 60, jitter: 10, vision: 10, starve: 0, rings: 4, varyByRing: false },
   'cautious standoff':{ wrap: false, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
-                        aggressivePct: 0, jitter: 0, vision: 42, starve: 0, rings: 1 },
+                        aggressivePct: 0, jitter: 0, vision: 42, starve: 0, rings: 1, varyByRing: false },
   'graveyard maze':   { wrap: true, corpses: true, inherit: true, moves: 'all', speedMode: 'uniform',
-                        aggressivePct: 100, jitter: 5, vision: 42, starve: 0, rings: 1 },
+                        aggressivePct: 100, jitter: 5, vision: 42, starve: 0, rings: 1, varyByRing: false },
   'drunken brawl':    { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
-                        aggressivePct: 100, jitter: 45, vision: 42, starve: 0, rings: 1 },
+                        aggressivePct: 100, jitter: 45, vision: 42, starve: 0, rings: 1, varyByRing: false },
   'tortoise hunt':    { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'fast-cautious',
-                        aggressivePct: 50, jitter: 0, vision: 42, starve: 150, rings: 1 },
+                        aggressivePct: 50, jitter: 0, vision: 42, starve: 150, rings: 1, varyByRing: false },
+  // five rings, each its own personality: ring 0 cautious & near-sighted,
+  // ring 4 aggressive & all-seeing, the middle rings graded in between
+  'ring factions':    { wrap: true, corpses: false, inherit: true, moves: 'all', speedMode: 'uniform',
+                        aggressivePct: 50, jitter: 0, vision: 42, starve: 0, rings: 5, varyByRing: true },
 };
 
 // Shapes are placed as one chain in path order, onto a cleared, paused grid —
@@ -976,6 +1013,7 @@ function drawShape(name) {
   // same shape, each chasing within itself (K=1: one chain, full rainbow)
   const K = Math.max(1, Math.min(settings.rings, want));
   ringCount = K;
+  computeRingParams(K);
   for (let j = 0; j < want; j++) {
     const [cx, cy] = chosen[j];
     px.push({
@@ -1127,7 +1165,7 @@ function updateStats() {
   if (settled && alive === 1 && px.length > 1) {
     const wIdx = px.findIndex(p => p.alive);
     const w = px[wIdx];
-    const temperament = w.temper * 100 < settings.aggressivePct ? 'aggressive' : 'cautious';
+    const temperament = w.temper * 100 < ringP(w).aggressivePct ? 'aggressive' : 'cautious';
     winnerEl.hidden = false;
     winnerEl.innerHTML = '<span class="swatch" style="background:hsl(' + Math.round(w.hue)
       + ',80%,60%)"></span> pixel #' + wIdx + ' survives — ' + temperament
@@ -1139,7 +1177,7 @@ function updateStats() {
   const focusDiv = document.getElementById('focus');
   if (focusIdx !== null && px[focusIdx]) {
     const f = px[focusIdx];
-    const temperament = f.temper * 100 < settings.aggressivePct ? 'aggressive' : 'cautious';
+    const temperament = f.temper * 100 < ringP(f).aggressivePct ? 'aggressive' : 'cautious';
     focusDiv.hidden = false;
     focusDiv.innerHTML = '<span class="swatch" style="background:hsl(' + Math.round(f.hue)
       + ',80%,60%)"></span> #' + focusIdx + (f.alive
@@ -1298,6 +1336,35 @@ bindCheck('in-rivalry', 'rivalry');
 bindCheck('in-evolve', 'evolve');
 bindCheck('in-solid', 'solidBody');
 
+// "vary by ring" re-fans live: the current ring count keeps its personalities,
+// and the aggressive/jitter/vision sliders act as the centre of each spread.
+document.getElementById('in-vary').addEventListener('input', e => {
+  settings.varyByRing = e.target.checked;
+  reRing();
+});
+
+// recompute per-ring personalities against the live ring count, then refresh the
+// slider readouts to show each spread's min–max (or the plain value when off)
+function reRing() {
+  computeRingParams(ringCount);
+  refreshVaryUI();
+}
+
+function refreshVaryUI() {
+  const varying = settings.varyByRing && ringCount > 1;
+  const span = (id, base, spread, lo, hi, fmt) => {
+    const el = document.getElementById(id);
+    const show = v => (fmt ? fmt(v) : v);
+    if (!varying) { el.textContent = show(base); return; }
+    const a = Math.min(hi, Math.max(lo, base - spread));
+    const b = Math.min(hi, Math.max(lo, base + spread));
+    el.textContent = a === b ? show(a) : show(a) + '–' + show(b);
+  };
+  span('val-strategy', settings.aggressivePct, RING_SPREAD.aggressivePct, 0, 100);
+  span('val-jitter', settings.jitter, RING_SPREAD.jitter, 0, 100);
+  span('val-vision', settings.vision, RING_SPREAD.vision, 2, 42, v => v >= 42 ? '∞' : v);
+}
+
 // corpses toggle applies retroactively: ON solidifies every existing body,
 // OFF releases them all back to walkable ghosts
 document.getElementById('in-corpses').addEventListener('input', e => {
@@ -1319,8 +1386,8 @@ document.getElementById('in-sound').addEventListener('input', e => {
   if (settings.sound) ensureAudio(); // the click doubles as the audio-unlock gesture
 });
 
-bindRange('in-strategy', 'val-strategy', v => { settings.aggressivePct = v; });
-bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; });
+bindRange('in-strategy', 'val-strategy', v => { settings.aggressivePct = v; reRing(); });
+bindRange('in-jitter', 'val-jitter', v => { settings.jitter = v; reRing(); });
 
 document.getElementById('in-moves').addEventListener('input', e => {
   settings.moves = e.target.value;
@@ -1350,6 +1417,7 @@ visionEl.addEventListener('input', () => {
   const v = Number(visionEl.value);
   settings.vision = v;
   document.getElementById('val-vision').textContent = v >= 42 ? '∞' : v;
+  reRing();
 });
 
 const pauseBtn = document.getElementById('btn-pause');
@@ -1368,6 +1436,7 @@ document.getElementById('btn-restart').addEventListener('click', () => {
   settings.gridSize = Number(document.getElementById('in-grid').value);
   if (paused) { paused = false; pauseBtn.textContent = 'pause'; }
   seedSim();
+  refreshVaryUI();
 });
 
 document.getElementById('btn-clear').addEventListener('click', () => {
@@ -1383,7 +1452,7 @@ function stateToHash() {
     'm=' + s.moves, 'sm=' + s.speedMode, 'a=' + s.aggressivePct, 'j=' + s.jitter,
     'v=' + s.vision, 'st=' + s.starve, 't=' + (+s.trails), 'l=' + (+s.chaseLines),
     'sf=' + s.surface, 'snd=' + (+s.sound), 'rv=' + (+s.rivalry), 'e=' + (+s.evolve),
-    'sb=' + (+s.solidBody),
+    'sb=' + (+s.solidBody), 'vry=' + (+s.varyByRing),
   ];
   if (runSeed !== null) parts.push('sd=' + runSeed);
   if (lastShape) parts.push('shape=' + lastShape);
@@ -1409,7 +1478,7 @@ function applyHash() {
   num('v', 'vision', 2, 42); num('st', 'starve', 0, 400);
   bool('w', 'wrap'); bool('c', 'corpses'); bool('o', 'shuffled'); bool('i', 'inherit');
   bool('t', 'trails'); bool('l', 'chaseLines'); bool('snd', 'sound'); bool('rv', 'rivalry');
-  bool('e', 'evolve'); bool('sb', 'solidBody');
+  bool('e', 'evolve'); bool('sb', 'solidBody'); bool('vry', 'varyByRing');
   if (q.has('m') && DIRS[q.get('m')]) settings.moves = q.get('m');
   const sm = q.get('sm');
   if (sm && ['uniform', 'fast-aggressive', 'fast-cautious'].includes(sm)) settings.speedMode = sm;
@@ -1446,6 +1515,7 @@ function syncUI() {
   check('in-shuffled', settings.shuffled);
   check('in-inherit', settings.inherit);
   check('in-rivalry', settings.rivalry);
+  check('in-vary', settings.varyByRing);
   check('in-evolve', settings.evolve);
   check('in-solid', settings.solidBody);
   set('in-moves', settings.moves);
@@ -1461,6 +1531,7 @@ function syncUI() {
   set('in-rings', settings.rings);
   document.getElementById('val-rings').textContent = settings.rings;
   set('in-surface', settings.surface);
+  refreshVaryUI();
 }
 
 document.getElementById('in-recipe').addEventListener('input', e => {

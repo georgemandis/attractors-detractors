@@ -29,6 +29,12 @@ A single-file [p5.js](https://p5js.org/) sketch. No build step — open
 - **Share** — the URL hash tracks every setting *and the run seed*; the
   share button copies a link that replays your exact run, capture for
   capture.
+- **Give each ring a personality** — with more than one ring, flip *vary by
+  ring* and every ring fans out around the sliders: ring 0 the most cautious
+  and near-sighted, the last ring the most aggressive and all-seeing, the rest
+  graded in between. The *ring factions* preset shows it off. (Determinism
+  holds — the spread is a pure function of the ring index, so a shared link
+  replays it exactly.)
 - **Go 3D** — run the same rules on the surface of a cube, sphere, gem, or
   torus (the torus is literally the flat wrap-mode grid, finally visible as
   the donut it always was). Drag to orbit.
@@ -62,7 +68,9 @@ because your timing and pointer aren't part of the seed.
 Topology (wrap/walls), corpses as obstacles, turn order, prey inheritance,
 movement neighborhoods (8-way / orthogonal / diagonal), aggressive/cautious
 mix, random jitter, vision radius, speed classes, hunger, multiple
-independent rings (with optional rock-paper-scissors rivalry between them),
+independent rings (with optional rock-paper-scissors rivalry between them, and
+optional per-ring personalities that fan aggression/vision/jitter across the
+rings),
 evolution (deaths spawn mutated children — watch temperament drift under
 selection), drawable walls, sonification, click-to-follow a pixel, WebM
 recording, trails, chase lines — and 3D surfaces: run the same rules on the
